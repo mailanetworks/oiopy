@@ -6,6 +6,7 @@ import testtools
 
 from oiopy.object_storage import StorageAPI
 from oiopy import exceptions
+from oiopy import utils
 
 
 class TestObjectStorageFunctional(testtools.TestCase):
@@ -75,9 +76,26 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.storage.get, self.container_name_2)
 
     def test_container_metadata(self):
-        self.container.set_metadata({"a": 1})
-        meta = self.container.get_metadata()
-        self.assertEqual(meta.get("a"), 1)
+        key = "user." + utils.random_string()
+        value = utils.random_string()
+        meta = {key: value}
+        self.container.set_metadata(meta)
+        rmeta = self.container.get_metadata()
+        self.assertEqual(rmeta.get(key), value)
+        self.container.delete_metadata([])
+        rmeta = self.container.get_metadata()
+        self.assertEqual(rmeta.get(key), None)
+
+    def test_object_metadata(self):
+        key = utils.random_string()
+        value = utils.random_string()
+        meta = {key: value}
+        self.container.set_object_metadata(self.object_name, meta)
+        rmeta = self.container.get_object_metadata(self.object_name)
+        self.assertEqual(rmeta.get(key), value)
+        self.container.delete_object_metadata(self.object_name, [])
+        rmeta = self.container.get_object_metadata(self.object_name)
+        self.assertEqual(rmeta.get(key), None)
 
     def test_fetch_object(self):
         stream = self.container.fetch(self.object_name)

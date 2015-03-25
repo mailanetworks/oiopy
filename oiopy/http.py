@@ -16,7 +16,7 @@ import json
 
 from eventlet.green.httplib import HTTPConnection
 
-from utils import InsensitiveDict
+from oiopy.utils import InsensitiveDict
 
 
 CHUNK_SIZE = 8 * 1024
@@ -71,7 +71,7 @@ def http_request(host, method, path, data=None, headers=None):
     if not headers:
         headers = {}
     conn.request(method, path, data, headers)
-    raw_resp = conn.getresponse()
+    raw_resp = conn.getresponse(True)
     resp = Response()
     resp.status_code = raw_resp.status
     resp.raw = raw_resp

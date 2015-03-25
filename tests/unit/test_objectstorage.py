@@ -15,8 +15,7 @@ from oiopy.object_storage import StorageObject
 from oiopy.object_storage import ensure_container
 from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
-from oiopy.object_storage import CONTAINER_METADATA_PREFIX, \
-    OBJECT_METADATA_PREFIX
+from oiopy.object_storage import OBJECT_METADATA_PREFIX
 
 
 @contextmanager
@@ -43,6 +42,7 @@ class ObjectStorageTest(unittest.TestCase):
     def setUp(self):
         self.api = fakes.FakeStorageAPI("http://1.2.3.4:8000", "NS")
         self.container = self.api.create("fake")
+        self.headers = {"x-req-id": utils.random_string()}
 
     def test_ensure_container(self):
         class TestAPI(object):
@@ -74,6 +74,199 @@ class ObjectStorageTest(unittest.TestCase):
 
         obj = utils.random_string()
         self.assertRaises(exceptions.NoSuchObject, test, self, obj)
+
+    def test_api_list_container_objects(self):
+        name = utils.random_string()
+        marker = utils.random_string()
+        delimiter = utils.random_string()
+        end_marker = utils.random_string()
+        prefix = utils.random_string()
+        limit = random.randint(1, 1000)
+        self.api._service.list = Mock()
+        self.api.list_container_objects(name, limit=limit, marker=marker,
+                                        prefix=prefix, delimiter=delimiter,
+                                        end_marker=end_marker,
+                                        headers=self.headers)
+        self.api._service.list.assert_called_once_with(name, limit=limit,
+                                                       marker=marker,
+                                                       prefix=prefix,
+                                                       delimiter=delimiter,
+                                                       end_marker=end_marker,
+                                                       headers=self.headers)
+
+    def test_api_get_container_metadata(self):
+        name = utils.random_string()
+        self.api._service.get_metadata = Mock()
+        self.api.get_container_metadata(name, headers=self.headers)
+        self.api._service.get_metadata. \
+            assert_called_once_with(name, headers=self.headers)
+
+    def test_api_set_container_metadata(self):
+        name = utils.random_string()
+        key = utils.random_string()
+        value = utils.random_string()
+        metadata = {key: value}
+        self.api._service.set_metadata = Mock()
+        self.api.set_container_metadata(name, metadata, headers=self.headers)
+        self.api._service.set_metadata. \
+            assert_called_once_with(name, metadata, headers=self.headers)
+
+    def test_api_delete_container_metadata(self):
+        name = utils.random_string()
+        key = utils.random_string()
+        keys = [key]
+        self.api._service.delete_metadata = Mock()
+        self.api.delete_container_metadata(name, keys, headers=self.headers)
+        self.api._service.delete_metadata. \
+            assert_called_once_with(name, keys, headers=self.headers)
+
+    def test_api_get_object_metadata(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        self.api._service.get_object_metadata = Mock()
+        self.api.get_object_metadata(name, obj, headers=self.headers)
+        self.api._service.get_object_metadata. \
+            assert_called_once_with(name, obj, headers=self.headers)
+
+    def test_api_set_object_metadata(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        key = utils.random_string()
+        value = utils.random_string()
+        metadata = {key: value}
+        self.api._service.set_object_metadata = Mock()
+        self.api.set_object_metadata(name, obj, metadata, headers=self.headers)
+        self.api._service.set_object_metadata. \
+            assert_called_once_with(name, obj, metadata, headers=self.headers)
+
+    def test_api_delete_object_metadata(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        key = utils.random_string()
+        keys = [key]
+        self.api._service.delete_object_metadata = Mock()
+        self.api.delete_object_metadata(name, obj, keys, headers=self.headers)
+        self.api._service.delete_object_metadata. \
+            assert_called_once_with(name, obj, keys, headers=self.headers)
+
+    def test_api_get_object(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        self.api._service.get_object = Mock()
+        self.api.get_object(name, obj, headers=self.headers)
+        self.api._service.get_object. \
+            assert_called_once_with(name, obj, headers=self.headers)
+
+    def test_api_upload_file(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        file_or_path = utils.random_string()
+        etag = utils.random_string()
+        content_type = utils.random_string()
+        content_length = random.randint(1, 1000)
+        key = utils.random_string()
+        value = utils.random_string()
+        metadata = {key: value}
+
+        self.api._service.create_object = Mock()
+        self.api.upload_file(name, file_or_path, obj_name=obj, etag=etag,
+                             content_type=content_type,
+                             content_length=content_length, metadata=metadata,
+                             headers=self.headers, return_none=False)
+        self.api._service.create_object. \
+            assert_called_once_with(name, file_or_path=file_or_path,
+                                    obj_name=obj, etag=etag,
+                                    content_type=content_type,
+                                    content_length=content_length,
+                                    metadata=metadata,
+                                    data=None,
+                                    return_none=False,
+                                    headers=self.headers)
+
+    def test_api_store_object(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        data = utils.random_string()
+        etag = utils.random_string()
+        content_type = utils.random_string()
+        content_length = random.randint(1, 1000)
+        key = utils.random_string()
+        value = utils.random_string()
+        metadata = {key: value}
+
+        self.api._service.create_object = Mock()
+        self.api.store_object(name, obj, etag=etag, data=data,
+                              content_type=content_type,
+                              content_length=content_length, metadata=metadata,
+                              headers=self.headers, return_none=False)
+
+        self.api._service.create_object. \
+            assert_called_once_with(name, file_or_path=None,
+                                    obj_name=obj, etag=etag,
+                                    content_type=content_type,
+                                    content_length=content_length,
+                                    metadata=metadata,
+                                    data=data,
+                                    return_none=False,
+                                    headers=self.headers)
+
+    def test_api_create_object(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        file_or_path = utils.random_string()
+        data = utils.random_string()
+        etag = utils.random_string()
+        content_type = utils.random_string()
+        content_length = random.randint(1, 1000)
+        key = utils.random_string()
+        value = utils.random_string()
+        metadata = {key: value}
+
+        self.api._service.create_object = Mock()
+        self.api.create_object(name, obj_name=obj, file_or_path=file_or_path,
+                               etag=etag, data=data, content_type=content_type,
+                               content_length=content_length, metadata=metadata,
+                               headers=self.headers, return_none=False)
+
+        self.api._service.create_object. \
+            assert_called_once_with(name, file_or_path=file_or_path,
+                                    obj_name=obj, etag=etag,
+                                    content_type=content_type,
+                                    content_length=content_length,
+                                    metadata=metadata,
+                                    data=data,
+                                    return_none=False,
+                                    headers=self.headers)
+
+    def test_api_fetch_object(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        size = random.randint(1, 1000)
+        offset = random.randint(1, 1000)
+
+        self.api._service.fetch_object = Mock()
+        self.api.fetch_object(name, obj, size, offset, with_meta=False,
+                              headers=self.headers)
+
+        self.api._service.fetch_object. \
+            assert_called_once_with(name, obj, size=size,
+                                    offset=offset, with_meta=False,
+                                    headers=self.headers)
+
+    def test_api_delete(self):
+        name = utils.random_string()
+        self.api._service.delete = Mock()
+        self.api.delete(name, headers=self.headers)
+        self.api._service.delete. \
+            assert_called_once_with(name, headers=self.headers)
+
+    def test_api_delete_object(self):
+        name = utils.random_string()
+        obj = utils.random_string()
+        self.api._service.delete_object = Mock()
+        self.api.delete_object(name, obj, headers=self.headers)
+        self.api._service.delete_object. \
+            assert_called_once_with(name, obj, headers=self.headers)
 
     def test_container_list(self):
         container = self.container
@@ -201,17 +394,17 @@ class ObjectStorageTest(unittest.TestCase):
         container = self.container
         srv = container.service
 
+        name = utils.random_string()
         key = utils.random_string()
         value = utils.random_string()
 
         resp = fakes.FakeResponse()
-        resp.headers = {}
-        resp.headers['%s%s' % (CONTAINER_METADATA_PREFIX, key)] = value
-        srv.api.do_head = Mock(return_value=(resp, None))
+        resp_body = {key: value}
+        srv.api.do_post = Mock(return_value=(resp, resp_body))
 
-        meta = srv.get_metadata(container)
+        meta = srv.get_metadata(name)
 
-        self.assertEqual(meta, {key: value})
+        self.assertEqual(meta, resp_body)
 
     def test_container_set_metadata(self):
         container = self.container
@@ -223,11 +416,11 @@ class ObjectStorageTest(unittest.TestCase):
         meta = {key: value}
         resp = fakes.FakeResponse()
         srv.api.do_post = Mock(return_value=(resp, None))
-        srv.set_metadata(container, meta)
+        srv.set_metadata(name, meta)
 
-        uri = "%s/%s" % (srv.uri_base, name)
-        headers = {"%s%s" % (CONTAINER_METADATA_PREFIX, key): value}
-        srv.api.do_post.assert_called_once_with(uri, headers=headers)
+        uri = "%s/%s/action" % (srv.uri_base, name)
+        body = {"action": "SetProperties", "args": meta}
+        srv.api.do_post.assert_called_once_with(uri, body=body, headers=None)
 
     def test_object_get(self):
         container = self.container
@@ -281,13 +474,16 @@ class ObjectStorageTest(unittest.TestCase):
         container = self.container
         srv = container.object_service
         name = utils.random_string()
+        key = utils.random_string()
+        value = utils.random_string()
         resp = fakes.FakeResponse()
-        resp.headers = {object_headers["name"]: name}
-        uri = "%s/%s" % (srv.uri_base, utils.quote(name))
-        srv.api.do_head = Mock(return_value=(resp, None))
+        resp_body = {key: value}
+        uri = "%s/%s/action" % (srv.uri_base, utils.quote(name))
+        srv.api.do_post = Mock(return_value=(resp, resp_body))
         meta = srv.get_metadata(name)
-        srv.api.do_head.assert_called_once_with(uri, headers=None)
-        self.assertEqual(meta, {"name": name})
+        body = {'action': 'GetProperties', 'args': None}
+        srv.api.do_post.assert_called_once_with(uri, body=body, headers=None)
+        self.assertEqual(meta, resp_body)
 
     def test_object_set_metadata(self):
         container = self.container
@@ -299,13 +495,12 @@ class ObjectStorageTest(unittest.TestCase):
         meta = {key: value}
         resp = fakes.FakeResponse()
         srv.api.do_post = Mock(return_value=(resp, None))
-        srv.set_metadata(container, meta)
+        srv.set_metadata(name, meta)
 
-        uri = "%s/%s" % (srv.uri_base, name)
-        headers = {"%s%s" % (OBJECT_METADATA_PREFIX, key): value}
-        srv.api.do_post.assert_called_once_with(uri, headers=headers)
+        uri = "%s/%s/action" % (srv.uri_base, name)
+        body = {'action': 'SetProperties', 'args': meta}
+        srv.api.do_post.assert_called_once_with(uri, body=body, headers=None)
 
-    @unittest.skip('proxyd not fixed yet')
     def test_object_delete(self):
         srv = self.container.object_service
         name = utils.random_string()
@@ -315,12 +510,13 @@ class ObjectStorageTest(unittest.TestCase):
             {"url": "http://1.2.3.4:6000/CCCC", "pos": "2", "size": 32}
         ]
         srv.api.do_delete = Mock(return_value=(None, resp_body))
+        srv._delete = Mock()
         srv.delete(name)
 
         uri = "%s/%s" % (srv.uri_base, utils.quote(name))
-        srv.api.do_delete.assert_called_once_with(uri)
+        srv.api.do_delete.assert_called_once_with(uri, headers=None)
+        srv._delete.assert_called_once_with(resp_body, headers=None)
 
-    @unittest.skip('proxyd not fixed yet')
     def test_object_delete_not_found(self):
         srv = self.container.object_service
         name = utils.random_string()

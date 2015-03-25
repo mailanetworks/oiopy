@@ -130,6 +130,12 @@ class StorageAPI(API):
         """
         return self._service.set_metadata(container, metadata, headers=headers)
 
+    def delete_container_metadata(self, container, keys, headers=None):
+        """
+        Delete metadata for the specified container.
+        """
+        return self._service.delete_metadata(container, keys, headers=headers)
+
     def get_object_metadata(self, container, obj, headers=None):
         """
         Return the metadata for the specified object.
@@ -143,6 +149,13 @@ class StorageAPI(API):
         """
         return self._service.set_object_metadata(container, obj, metadata,
                                                  headers=headers)
+
+    def delete_object_metadata(self, container, obj, keys, headers=None):
+        """
+        Delete metadata for the specified object.
+        """
+        return self._service.delete_object_metadata(container, obj, keys,
+                                                    headers=headers)
 
     def get_object(self, container, obj, headers=None):
         """
@@ -188,7 +201,7 @@ class StorageAPI(API):
         return self._service.create_object(container, file_or_path=file_or_path,
                                            obj_name=obj_name, data=data,
                                            content_length=content_length,
-                                           content_type=content_type,
+                                           content_type=content_type, etag=etag,
                                            metadata=metadata, headers=headers,
                                            return_none=return_none)
 
@@ -230,12 +243,15 @@ class StorageObject(Resource):
         return self.service.fetch(self, size=size, offset=offset,
                                   with_meta=with_meta, headers=headers)
 
-    def get_metadata(self, prefix=None, headers=None):
-        return self.service.get_metadata(self, prefix, headers=headers)
+    def get_metadata(self, headers=None):
+        return self.service.get_metadata(self, headers=headers)
 
-    def set_metadata(self, metadata, clear=False, prefix=None, headers=None):
+    def set_metadata(self, metadata, clear=False, headers=None):
         return self.service.set_metadata(self, metadata, clear=clear,
-                                         prefix=prefix, headers=headers)
+                                         headers=headers)
+
+    def delete_metadata(self, keys, headers=None):
+        return self.service.delete_metadata(self, keys, headers=headers)
 
     def copy(self, destination, headers=None):
         return self.service.copy(self, destination, headers=headers)
@@ -259,9 +275,12 @@ class Container(Resource):
     def get_metadata(self, headers=None):
         return self.service.get_metadata(self, headers=headers)
 
-    def set_metadata(self, metadata, clear=False, prefix=None, headers=None):
+    def set_metadata(self, metadata, clear=False, headers=None):
         return self.service.set_metadata(self, metadata, clear=clear,
-                                         prefix=prefix, headers=headers)
+                                         headers=headers)
+
+    def delete_metadata(self, keys, headers=None):
+        return self.service.delete_metadata(self, keys, headers=headers)
 
     def get_object(self, obj_name, headers=None):
         return self.object_service.get(obj_name, headers=headers)
@@ -271,7 +290,7 @@ class Container(Resource):
                                          with_meta=with_meta, headers=headers)
 
     def list(self, marker=None, limit=None, prefix=None,
-             delimiter=None, end_marker=None, full_listing=False, headers=None):
+             delimiter=None, end_marker=None, headers=None):
         return self.service.list(self, marker=marker, limit=limit,
                                  prefix=prefix, delimiter=delimiter,
                                  end_marker=end_marker, headers=headers)
@@ -300,6 +319,9 @@ class Container(Resource):
 
     def set_object_metadata(self, obj, metadata, headers=None):
         return self.object_service.set_metadata(obj, metadata, headers=headers)
+
+    def delete_object_metadata(self, obj, keys, headers=None):
+        return self.object_service.delete_metadata(obj, keys, headers=headers)
 
 
 class ContainerService(Service):
@@ -362,30 +384,34 @@ class ContainerService(Service):
         self.directory.unlink(container, "meta2", headers=headers)
 
     @handle_container_not_found
-    def get_metadata(self, container, prefix=None, headers=None):
+    def get_metadata(self, container, headers=None):
         uri = self._make_uri(container)
-        resp, resp_body = self.api.do_head(uri, headers=headers)
-
-        if prefix is None:
-            prefix = CONTAINER_METADATA_PREFIX
-
-        meta = {}
-        for k, v in resp.headers.iteritems():
-            if k.lower().startswith(prefix):
-                meta[k.replace(prefix.lower(), "")] = v
-        return meta
+        resp, resp_body = self._action(uri, 'GetProperties', None,
+                                       headers=headers)
+        return resp_body
 
     @handle_container_not_found
-    def set_metadata(self, container, metadata, clear=False, prefix=None,
-                     headers=None):
-        pass
+    def set_metadata(self, container, metadata, clear=False, headers=None):
+        uri = self._make_uri(container)
+        if clear:
+            resp, resp_body = self._action(uri, 'DelProperties', [],
+                                           headers=headers)
+        resp, resp_body = self._action(uri, 'SetProperties', metadata,
+                                       headers=headers)
+
+    @handle_container_not_found
+    def delete_metadata(self, container, keys, headers=None):
+        uri = self._make_uri(container)
+        resp, resp_body = self._action(uri, 'DelProperties', keys,
+                                       headers=headers)
+
 
     @ensure_container
-    def create_object(self, container, file_or_path=None, data=None,
+    def create_object(self, container, file_or_path=None, data=None, etag=None,
                       obj_name=None, content_type=None, content_length=None,
                       metadata=None, headers=None, return_none=False):
 
-        return container.create(file_or_path=file_or_path, data=data,
+        return container.create(file_or_path=file_or_path, data=data, etag=etag,
                                 obj_name=obj_name, content_type=content_type,
                                 content_length=content_length,
                                 metadata=metadata, headers=headers,
@@ -399,7 +425,7 @@ class ContainerService(Service):
     @handle_container_not_found
     def set_storage_policy(self, container, storage_policy, headers=None):
         uri = self._make_uri(container)
-        self.action(uri, "SetStoragePolicy", storage_policy, headers=headers)
+        self._action(uri, "SetStoragePolicy", storage_policy, headers=headers)
 
     @handle_container_not_found
     def list(self, container, limit=None, marker=None, prefix=None,
@@ -436,6 +462,11 @@ class ContainerService(Service):
     def get_object_metadata(self, container, obj, headers=None):
 
         return container.get_object_metadata(obj, headers=headers)
+
+    @ensure_container
+    def delete_object_metadata(self, container, obj, keys, headers=None):
+
+        return container.delete_object_metadata(obj, keys, headers=headers)
 
     @ensure_container
     def get_object(self, container, obj, headers=None):
@@ -554,6 +585,7 @@ class StorageObjectService(Service):
                 headers["chunk_position"] = chunk["pos"]
                 headers["chunk_size"] = chunk["size"]
                 headers["chunk_id"] = chunk_path
+
                 with ConnectionTimeout(CONNECTION_TIMEOUT):
                     conn = http_connect(parsed.netloc, 'PUT', parsed.path,
                                         headers)
@@ -575,6 +607,7 @@ class StorageObjectService(Service):
 
         for pos in range(len(chunks)):
             current_chunks = chunks[pos]
+
             pile = GreenPile(len(current_chunks))
 
             for current_chunk in current_chunks:
@@ -739,8 +772,7 @@ class StorageObjectService(Service):
     @handle_object_not_found
     def delete(self, obj, headers=None):
         uri = self._make_uri(obj)
-        resp, resp_body = self.api.do_get(uri, headers=headers)
-        dresp, dresp_body = self.api.do_delete(uri, headers=headers)
+        resp, resp_body = self.api.do_delete(uri, headers=headers)
 
         raw_chunks = resp_body
         self._delete(raw_chunks, headers=headers)
@@ -766,8 +798,9 @@ class StorageObjectService(Service):
     @handle_object_not_found
     def get_metadata(self, obj, prefix=None, headers=None):
         uri = self._make_uri(obj)
-        resp, resp_body = self.api.do_head(uri, headers=headers)
-        return self._make_metadata(resp.headers, prefix)
+        resp, resp_body = self._action(uri, 'GetProperties', None,
+                                       headers=headers)
+        return resp_body
 
     def _make_metadata(self, headers, prefix=None):
         meta = {}
@@ -782,9 +815,14 @@ class StorageObjectService(Service):
         return meta
 
     @handle_object_not_found
-    def set_metadata(self, obj, metadata, clear=False, prefix=None,
-                     headers=None):
+    def set_metadata(self, obj, metadata, clear=False, headers=None):
         uri = self._make_uri(obj)
+        resp, resp_body = self._action(uri, "SetProperties", metadata, headers)
+
+    @handle_object_not_found
+    def delete_metadata(self, obj, keys, headers=None):
+        uri = self._make_uri(obj)
+        resp, resp_body = self._action(uri, "DelProperties", keys, headers)
 
 
 class ChunkDownloadHandler(object):
@@ -828,7 +866,7 @@ class ChunkDownloadHandler(object):
                     parsed = urlparse(raw_url)
                     conn = http_connect(parsed.netloc, 'GET', parsed.path,
                                         self.headers)
-                source = conn.getresponse()
+                source = conn.getresponse(True)
                 source.conn = conn
 
             except Exception as e:
