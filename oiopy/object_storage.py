@@ -143,12 +143,13 @@ class StorageAPI(API):
         return self._service.get_object_metadata(container, obj,
                                                  headers=headers)
 
-    def set_object_metadata(self, container, obj, metadata, headers=None):
+    def set_object_metadata(self, container, obj, metadata, clear=False,
+                            headers=None):
         """
         Update the metadata for the specified object.
         """
         return self._service.set_object_metadata(container, obj, metadata,
-                                                 headers=headers)
+                                                 clear=clear, headers=headers)
 
     def delete_object_metadata(self, container, obj, keys, headers=None):
         """
@@ -317,8 +318,9 @@ class Container(Resource):
     def get_object_metadata(self, obj, headers=None):
         return self.object_service.get_metadata(obj, headers=headers)
 
-    def set_object_metadata(self, obj, metadata, headers=None):
-        return self.object_service.set_metadata(obj, metadata, headers=headers)
+    def set_object_metadata(self, obj, metadata, clear=False, headers=None):
+        return self.object_service.set_metadata(obj, metadata, clear=clear,
+                                                headers=headers)
 
     def delete_object_metadata(self, obj, keys, headers=None):
         return self.object_service.delete_metadata(obj, keys, headers=headers)
@@ -394,8 +396,7 @@ class ContainerService(Service):
     def set_metadata(self, container, metadata, clear=False, headers=None):
         uri = self._make_uri(container)
         if clear:
-            resp, resp_body = self._action(uri, 'DelProperties', [],
-                                           headers=headers)
+            uri += '?flush=1'
         resp, resp_body = self._action(uri, 'SetProperties', metadata,
                                        headers=headers)
 
@@ -443,7 +444,7 @@ class ContainerService(Service):
         container = self._make(utils.get_id(container))
 
         objects = [StorageObject(container.object_service, el) for el in
-                   resp_body]
+                   resp_body["objects"]]
         return objects
 
     @ensure_container
@@ -454,9 +455,11 @@ class ContainerService(Service):
                                with_meta=with_meta, headers=headers)
 
     @ensure_container
-    def set_object_metadata(self, container, obj, metadata, headers=None):
+    def set_object_metadata(self, container, obj, metadata, clear=False,
+                            headers=None):
 
-        return container.set_object_metadata(obj, metadata, headers=headers)
+        return container.set_object_metadata(obj, metadata, clear=clear,
+                                             headers=headers)
 
     @ensure_container
     def get_object_metadata(self, container, obj, headers=None):
@@ -538,20 +541,25 @@ class StorageObjectService(Service):
         if content_length is None:
             raise exceptions.MissingContentLength()
 
+        sysmeta = {'content_type': content_type,
+                   'content_encoding': content_encoding,
+                   'content_length': content_length,
+                   'etag': etag}
+
         if src is data:
-            self._create(obj_name, StringIO(data), content_length,
+            self._create(obj_name, StringIO(data), sysmeta,
                          headers=headers)
         elif hasattr(file_or_path, "read"):
-            self._create(obj_name, src, content_length, headers=headers)
+            self._create(obj_name, src, sysmeta, headers=headers)
         else:
             with open(file_or_path, "rb") as f:
-                self._create(obj_name, f, content_length, headers=headers)
+                self._create(obj_name, f, sysmeta, headers=headers)
         if not return_none:
             return self.get(obj_name, headers=headers)
 
-    def _create(self, obj_name, src, content_length, headers=None):
+    def _create(self, obj_name, src, sysmeta, headers=None):
         uri = self._make_uri(obj_name)
-        args = {"size": content_length}
+        args = {"size": sysmeta['content_length']}
         resp, resp_body = self._action(uri, "Beans", args, headers=headers)
 
         raw_chunks = resp_body
@@ -562,12 +570,13 @@ class StorageObjectService(Service):
 
         chunks = self._sort_chunks(raw_chunks, rain_security)
         final_chunks, bytes_transferred, content_checksum = self._put_stream(
-            obj_name, src, content_length, chunks, headers=headers)
+            obj_name, src, sysmeta, chunks, headers=headers)
 
-        self._put_object(obj_name, bytes_transferred, content_checksum,
+        sysmeta['etag'] = content_checksum
+        self._put_object(obj_name, bytes_transferred, sysmeta,
                          final_chunks)
 
-    def _put_stream(self, obj_name, src, content_length, chunks, headers=None):
+    def _put_stream(self, obj_name, src, sysmeta, chunks, headers=None):
         global_checksum = hashlib.md5()
         total_bytes_transferred = 0
         content_chunks = []
@@ -580,10 +589,9 @@ class StorageObjectService(Service):
                 headers = {}
                 headers["transfer-encoding"] = "chunked"
                 headers["content_path"] = utils.quote(obj_name)
-                headers["content_size"] = content_length
+                headers["content_size"] = sysmeta['content_length']
                 headers["content_chunksnb"] = len(chunks)
                 headers["chunk_position"] = chunk["pos"]
-                headers["chunk_size"] = chunk["size"]
                 headers["chunk_id"] = chunk_path
 
                 with ConnectionTimeout(CONNECTION_TIMEOUT):
@@ -686,11 +694,12 @@ class StorageObjectService(Service):
 
         return content_chunks, total_bytes_transferred, content_checksum
 
-    def _put_object(self, obj_name, content_length, content_checksum, chunks,
+    def _put_object(self, obj_name, content_length, sysmeta, chunks,
                     headers=None):
 
         headers = {"x-oio-content-meta-length": content_length,
-                   "x-oio-content-meta-hash": content_checksum}
+                   "x-oio-content-meta-hash": sysmeta['etag'],
+                   "content-type": sysmeta['content_type']}
 
         uri = self._make_uri(obj_name)
         resp, resp_body = self.api.do_put(uri, headers=headers,
@@ -798,9 +807,13 @@ class StorageObjectService(Service):
     @handle_object_not_found
     def get_metadata(self, obj, prefix=None, headers=None):
         uri = self._make_uri(obj)
-        resp, resp_body = self._action(uri, 'GetProperties', None,
-                                       headers=headers)
-        return resp_body
+        resp, resp_body = self._action(uri, 'GetProperties',
+                                       None, headers=headers)
+
+        meta = self._make_metadata(resp.headers, prefix=prefix)
+        for k, v in resp_body.iteritems():
+            meta[k] = v
+        return meta
 
     def _make_metadata(self, headers, prefix=None):
         meta = {}
@@ -817,6 +830,8 @@ class StorageObjectService(Service):
     @handle_object_not_found
     def set_metadata(self, obj, metadata, clear=False, headers=None):
         uri = self._make_uri(obj)
+        if clear:
+            self.delete_metadata(obj, [], headers=headers)
         resp, resp_body = self._action(uri, "SetProperties", metadata, headers)
 
     @handle_object_not_found

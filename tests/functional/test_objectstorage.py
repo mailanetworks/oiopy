@@ -34,6 +34,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.object_name_2 = "func-test-object-%s-2" % uuid.uuid4()
 
         self.test_data = b'1337' * 10
+        self.hash_data = "894A14D048263CA40300302C7A5DB67C"
         self.storage = StorageAPI(self.proxyd_uri, self.namespace)
 
         self.container = self.storage.create(self.container_name)
@@ -64,7 +65,8 @@ class TestObjectStorageFunctional(testtools.TestCase):
 
     def test_list_container(self):
         objs = self.container.list()
-        self.assertTrue(len(objs))
+        self.assertEqual(len(objs), 1)
+        self.assertEqual(objs[0].name, self.object_name)
 
     def test_create_container(self):
         container = self.storage.create(self.container_name_3)
@@ -85,6 +87,8 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.container.delete_metadata([])
         rmeta = self.container.get_metadata()
         self.assertEqual(rmeta.get(key), None)
+        self.assertTrue(rmeta.get("sys.m2.usage"))
+        self.assertTrue(rmeta.get("sys.m2.ctime"))
 
     def test_object_metadata(self):
         key = utils.random_string()
@@ -93,9 +97,17 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.container.set_object_metadata(self.object_name, meta)
         rmeta = self.container.get_object_metadata(self.object_name)
         self.assertEqual(rmeta.get(key), value)
-        self.container.delete_object_metadata(self.object_name, [])
+        key2 = utils.random_string()
+        value2 = utils.random_string()
+        meta2 = {key2: value2}
+        self.container.set_object_metadata(self.object_name, meta2, clear=True)
         rmeta = self.container.get_object_metadata(self.object_name)
         self.assertEqual(rmeta.get(key), None)
+        self.assertEqual(rmeta.get(key2), value2)
+        self.assertEqual(rmeta.get("name"), self.object_name)
+        self.assertEqual(rmeta.get("hash"), self.hash_data)
+        self.assertEqual(rmeta.get("length"), "40")
+        self.assertTrue(rmeta.get("mime-type"))
 
     def test_fetch_object(self):
         stream = self.container.fetch(self.object_name)

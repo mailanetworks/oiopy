@@ -135,9 +135,11 @@ class ObjectStorageTest(unittest.TestCase):
         value = utils.random_string()
         metadata = {key: value}
         self.api._service.set_object_metadata = Mock()
-        self.api.set_object_metadata(name, obj, metadata, headers=self.headers)
+        self.api.set_object_metadata(name, obj, metadata,
+                                     clear=False, headers=self.headers)
         self.api._service.set_object_metadata. \
-            assert_called_once_with(name, obj, metadata, headers=self.headers)
+            assert_called_once_with(name, obj, metadata,
+                                    clear=False, headers=self.headers)
 
     def test_api_delete_object_metadata(self):
         name = utils.random_string()
@@ -281,7 +283,7 @@ class ObjectStorageTest(unittest.TestCase):
         uri = "%s/%s?%s" % (srv.uri_base, utils.get_id(container), qs)
         name0 = utils.random_string()
         name1 = utils.random_string()
-        resp_body = [{"name": name0}, {"name": name1}]
+        resp_body = {"objects": [{"name": name0}, {"name": name1}]}
         srv.api.do_get = Mock(return_value=(None, resp_body))
         objs = srv.list(container, limit=limit, marker=marker, prefix=prefix,
                         delimiter=delimiter, end_marker=end_marker,
@@ -608,7 +610,7 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(201, 201, 201):
             chunks, bytes_transferred, content_checksum = srv._put_stream(
-                name, src, 0, chunks)
+                name, src, {"content_length": 0}, chunks)
 
         final_chunks = [
             {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
@@ -636,7 +638,7 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(201, Exception(), Exception()):
             chunks, bytes_transferred, content_checksum = srv._put_stream(
-                name, src, 0, chunks)
+                name, src, {"content_length": 0}, chunks)
         self.assertEqual(len(chunks), 1)
         chunk = {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
                  "hash": "d41d8cd98f00b204e9800998ecf8427e"}
@@ -653,10 +655,8 @@ class ObjectStorageTest(unittest.TestCase):
         src = empty_stream()
 
         with set_http_connect(200, slow_connect=True):
-            chunks, bytes_transferred, content_checksum = srv._put_stream(name,
-                                                                          src,
-                                                                          0,
-                                                                          chunks)
+            chunks, bytes_transferred, content_checksum = srv. \
+                _put_stream(name, src, {"content_length": 0}, chunks)
 
     def test_put_stream_client_timeout(self):
         srv = self.container.object_service
@@ -671,7 +671,7 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(200):
             self.assertRaises(exceptions.ClientReadTimeout, srv._put_stream,
-                              name, src, 1, chunks)
+                              name, src, {"content_length": 1}, chunks)
 
 
 
