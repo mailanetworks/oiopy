@@ -601,9 +601,9 @@ class ObjectStorageTest(unittest.TestCase):
         name = utils.random_string()
         chunks = {
             0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0},
-                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 0},
-                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 0}
+                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
+                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 32},
+                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 32}
             ]
         }
         src = empty_stream()
@@ -629,9 +629,9 @@ class ObjectStorageTest(unittest.TestCase):
         name = utils.random_string()
         chunks = {
             0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0},
-                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 0},
-                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 0}
+                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
+                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 32},
+                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 32}
             ]
         }
         src = empty_stream()
@@ -649,7 +649,7 @@ class ObjectStorageTest(unittest.TestCase):
         name = utils.random_string()
         chunks = {
             0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0}
+                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32}
             ]
         }
         src = empty_stream()
@@ -663,7 +663,7 @@ class ObjectStorageTest(unittest.TestCase):
         name = utils.random_string()
         chunks = {
             0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0}
+                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32}
             ]
         }
 
