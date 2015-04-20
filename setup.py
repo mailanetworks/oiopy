@@ -20,7 +20,7 @@ setup(
     ],
     packages=['oiopy'],
     install_requires=[
-        'eventlet'
+        'eventlet', 'urllib3'
     ]
 
 )
