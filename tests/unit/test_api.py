@@ -13,19 +13,19 @@ FAKE_URL = "http://localhost:8888"
 
 
 @contextmanager
-def set_http_request(*args, **kwargs):
-    old = oiopy.api.http_request
+def set_proxyd_request(*args, **kwargs):
+    old = oiopy.api.API._proxyd_request
 
     new = fakes.fake_http_request(*args, **kwargs)
     try:
-        oiopy.api.http_request = new
+        oiopy.api.API._proxyd_request = new
         yield new
         unused_status = list(new.status_iter)
         if unused_status:
             raise AssertionError('unused status %r' % unused_status)
 
     finally:
-        oiopy.api.http_request = old
+        oiopy.api.API._proxyd_request = old
 
 
 class APITest(unittest.TestCase):
@@ -92,7 +92,7 @@ class APITest(unittest.TestCase):
 
     def test_request_ok(self):
         uri = "/fake"
-        with set_http_request(200):
+        with set_proxyd_request(200):
             resp, resp_body = self.api._request(uri, "GET")
         self.assertEqual(resp.status_code, 200)
 
@@ -107,7 +107,7 @@ class APITest(unittest.TestCase):
             context['headers'] = headers
             context['body'] = body
 
-        with set_http_request(200, callback=cb):
+        with set_proxyd_request(200, callback=cb):
             resp, resp_body = self.api._request(uri, "PUT", body=body)
 
         self.assertEqual(context['method'], "PUT")
@@ -116,18 +116,18 @@ class APITest(unittest.TestCase):
 
     def test_request_response(self):
         uri = "/fake"
-        with set_http_request((200, '{"a": 1, "b": 2}')):
+        with set_proxyd_request((200, '{"a": 1, "b": 2}')):
             resp, resp_body = self.api._request(uri, "GET")
         self.assertEqual(resp_body, {"a": 1, "b": 2})
 
         uri = '/fake2'
-        with set_http_request((200, 'data')):
+        with set_proxyd_request((200, 'data')):
             resp, resp_body = self.api._request(uri, "GET")
         self.assertEqual(resp_body, 'data')
 
     def test_request_400(self):
         uri = "/fake"
-        with set_http_request(400):
+        with set_proxyd_request(400):
             self.assertRaises(exceptions.ClientException, self.api._request,
                               uri, "GET")
 

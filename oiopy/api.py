@@ -15,8 +15,12 @@
 import json
 from urlparse import urlparse
 
+from eventlet import import_patched
+
+urllib3 = import_patched('urllib3')
+
 from oiopy import exceptions
-from oiopy.http import http_request
+from oiopy.http import Response
 
 
 class API(object):
@@ -30,6 +34,8 @@ class API(object):
         parsed = urlparse(endpoint_url)
         self.proxyd_host = parsed.netloc
         self.endpoint_uri = "%s/%s" % (parsed.path, self.version)
+        self.proxyd_pool = urllib3.HTTPConnectionPool(self.proxyd_host,
+                                                      maxsize=5)
 
     def create(self, *args, **kwargs):
         """
@@ -55,6 +61,22 @@ class API(object):
         """
         return self._service.list(limit=limit, marker=marker, **kwargs)
 
+    def _proxyd_request(self, method, uri, data=None, headers=None):
+        """
+        proxyd request
+        """
+        if not headers:
+            headers = {}
+        headers['connection'] = 'keep-alive'
+
+        raw = self.proxyd_pool.urlopen(method, uri, body=data, headers=headers)
+        resp = Response()
+        resp.status_code = raw.status
+        resp.reason = raw.reason
+        resp.headers = raw.headers
+        resp._content = raw.data
+        return resp
+
     def _request(self, uri, method, **kwargs):
         """
         Execute the request
@@ -67,7 +89,7 @@ class API(object):
             headers = kwargs.pop("headers")
         else:
             headers = None
-        resp = http_request(self.proxyd_host, method, uri, data, headers)
+        resp = self._proxyd_request(method, uri, data, headers)
         try:
             body = resp.json()
         except ValueError:
