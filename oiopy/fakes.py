@@ -17,6 +17,8 @@ from eventlet import Timeout, sleep
 from oiopy.utils import InsensitiveDict
 from oiopy.http import Response
 from oiopy.directory import DirectoryAPI
+from oiopy.directory import ReferenceService
+from oiopy.directory import Reference
 from oiopy.object_storage import StorageAPI
 from oiopy.object_storage import StorageObjectService
 from oiopy.object_storage import StorageObject
@@ -33,21 +35,6 @@ class FakeService(object):
     def __init__(self, *args, **kwargs):
         super(FakeService, self).__init__(*args, **kwargs)
         self.api = FakeAPI()
-
-    def _make(self, name):
-        pass
-
-    def create(self, resource):
-        pass
-
-    def get(self, resource):
-        pass
-
-    def delete(self, resource):
-        pass
-
-    def list(self, limit=None, marker=None):
-        pass
 
 
 class FakeResponse(Response):
@@ -131,12 +118,13 @@ class FakeTimeoutStream(object):
 
 
 class FakeStorageAPI(StorageAPI):
-    def create(self, name):
-        return FakeContainer(self._service, {"name": name})
+    def create(self, account, name):
+        return FakeContainer(self._service, {"name": name, "account": account})
 
 
 class FakeDirectoryAPI(DirectoryAPI):
-    pass
+    def create(self, account, name):
+        return FakeReference(self._service, {"name": name, "account": account})
 
 
 class FakeContainerService(ContainerService):
@@ -149,12 +137,24 @@ class FakeContainerService(ContainerService):
                                                    **kwargs)
 
 
+class FakeReferenceService(ReferenceService):
+    def __init__(self, api=None, *args, **kwargs):
+        if api is None:
+            api = FakeDirectoryAPI()
+        super(FakeReferenceService, self).__init__(api, *args, **kwargs)
+
+
+class FakeReference(Reference):
+    def __init__(self, *args, **kwargs):
+        super(FakeReference, self).__init__(*args, **kwargs)
+        self.service = FakeReferenceService(self.service.api)
+
+
 class FakeContainer(Container):
     def __init__(self, *args, **kwargs):
         super(FakeContainer, self).__init__(*args, **kwargs)
-        uri_base = "%s/%s" % (self.service.uri_base, self.id)
         self.object_service = FakeStorageObjectService(self.service.api,
-                                                       uri_base=uri_base)
+                                                       uri_base=self.uri_base)
 
 
 class FakeStorageObjectService(StorageObjectService):

@@ -16,7 +16,7 @@ you can retrieve your files using the appropriate "path" prefix.
 
 In this SDK, you manipulate `Container` and `StorageObject` classes, all you 
 need is to initialize a `StorageAPI` object.
-To initialize it you need the proxyd url and the namespace name:
+To initialize it, you need the proxyd url and the namespace name:
 
     from oiopy import object_storage
     s = object_storage.StorageAPI("http://localhost:8000", "NS")
@@ -24,15 +24,29 @@ To initialize it you need the proxyd url and the namespace name:
 All of the sample code that follows assumes that you have correctly initialized
 a `StorageAPI` object.
 
+Accounts
+--------
+Accounts are a convenient way to manage the storage containers. Containers 
+always belong to a specific Account.
+
+You can list containers for a specified Account.
+Accounts are also a great way to track your storage usage (Total bytes used, 
+Total number of objects, Total number of containers).
+
+The API lets you set and retrieve your own metadata on accounts.
+
 
 Creating a Container
 --------------------
 
 Start by creating a container:
 
-    container = s.create("example")
+    container = s.create("myaccount", "example")
     print "Name:", container.name
     print "Total size:", container.total_size
+    
+
+Note that you will need to specify an Account name.
 
 It should output:
 
@@ -47,7 +61,7 @@ Getting a Container
 
 To get a `Container`:
 
-    container = s.get("example")
+    container = s.get("myaccount", "example")
     print "Container:", container
 
 It should output:
@@ -70,7 +84,7 @@ This example creates an object named `object.txt` with the data provided, in the
 container `example`:
 
     data = "Content example"
-    obj = s.store_object("example", "object.txt", data)
+    obj = s.store_object("myaccount", "example", "object.txt", data)
     print "Object:", obj
 
 
@@ -81,7 +95,7 @@ It should output:
 Note that for methods that take a container as a parameter, you can pass
 directly the container instance:
 
-    container = s.create("example")
+    container = s.create("myaccount", "example")
     obj = s.store_object(container, "object", "sample")
  
 
@@ -89,13 +103,13 @@ The example shows how you can use the `upload_file()` method:
 
     path = "/home/me/foo/file.txt"
     print "Upload File"
-    obj = s.upload_file("example", path)
+    obj = s.upload_file("myaccount", "example", path)
     print "Stored Object:", obj
     
     print
     print "Upload File-like Object"
     with open("file.txt", "rb") as f:
-        obj1 = s.upload_file("example", f)
+        obj1 = s.upload_file("myaccount", "example", f)
     print "Stored Object:", obj1
         
 The methods return a `StorageObject` instance.
@@ -135,7 +149,7 @@ This sample code stores an object and retrieves it using the different
 parameters.
 
     data = "Content Example"
-    obj = s.store_object("example", "object.txt", data)
+    obj = s.store_object("myaccount", "example", "object.txt", data)
 
     print "Fetch object"
     gen = obj.fetch()
@@ -170,17 +184,17 @@ Containers and Objects Metadata
 The Object Storage API lets you set and retrieve your own metadata on containers
 and objects.
 
-    container = s.create("example")
-    meta = s.get_container_metadata(container)
+    container = s.create("myaccount", "example")
+    meta = s.get_container_metadata("myaccount", container)
     print "Metadata:", meta
     
 
 It should output and empty dict, unless you added metadata to this container.
 
     new_meta = {"color": "blue", "flag": "true"}
-    s.set_container_metadata(container, new_meta)
+    s.set_container_metadata("myaccount", container, new_meta)
     
-    meta = s.get_container_metadata(container)
+    meta = s.get_container_metadata("myaccount", container)
     print "Metadata:", meta
     
 It should now output:
@@ -224,12 +238,12 @@ its value.
 
 To illustrate these features, we create some objects in a container:
 
-    container = s.create("example")
+    container = s.create("myaccount", "example")
     for id in range(5):
-        s.store_object(container, "object%s" % id, "sample")
+        s.store_object("myaccount", container, "object%s" % id, "sample")
     start = ord("a")
     for id in xrange(start, start + 4):
-        s.store_object(container, "foo/%s" % chr(id), "sample")
+        s.store_object("myaccount", container, "foo/%s" % chr(id), "sample")
         
 First list all the objects:
 

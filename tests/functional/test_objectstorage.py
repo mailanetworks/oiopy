@@ -22,6 +22,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
         config.read(config_file)
         self.proxyd_uri = config.get('func_test', 'proxyd_uri')
         self.namespace = config.get('func_test', 'namespace')
+        self.account = config.get('func_test', 'account')
 
     def setUp(self):
         super(TestObjectStorageFunctional, self).setUp()
@@ -37,15 +38,17 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.hash_data = "894A14D048263CA40300302C7A5DB67C"
         self.storage = StorageAPI(self.proxyd_uri, self.namespace)
 
-        self.container = self.storage.create(self.container_name)
-        self.container_2 = self.storage.create(self.container_name_2)
+        self.container = self.storage.create(self.account, self.container_name)
+        self.container_2 = self.storage.create(self.account,
+                                               self.container_name_2)
         self.container.create(obj_name=self.object_name, data=self.test_data)
 
     def tearDown(self):
         super(TestObjectStorageFunctional, self).tearDown()
         for obj in (self.object_name, self.object_name_2):
             try:
-                self.storage.delete_object(self.container_name, obj)
+                self.storage.delete_object(self.account, self.container_name,
+                                           obj)
             except Exception:
                 pass
 
@@ -53,7 +56,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.container_name_2,
                           self.container_name_3]:
             try:
-                self.storage.delete(container)
+                self.storage.delete(self.account, container)
             except Exception:
                 pass
 
@@ -69,13 +72,13 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.assertEqual(objs[0].name, self.object_name)
 
     def test_create_container(self):
-        container = self.storage.create(self.container_name_3)
+        container = self.storage.create(self.account, self.container_name_3)
         self.assertTrue(container)
 
     def test_delete_container(self):
         self.container_2.delete()
         self.assertRaises(exceptions.NoSuchContainer,
-                          self.storage.get, self.container_name_2)
+                          self.storage.get, self.account, self.container_name_2)
 
     def test_container_metadata(self):
         key = "user." + utils.random_string()

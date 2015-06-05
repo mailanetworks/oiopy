@@ -2,6 +2,7 @@
 *.pyo
 dist
 build
+cover
 *.egg
 *.egg-info
 env/
