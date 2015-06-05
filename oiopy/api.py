@@ -17,6 +17,7 @@ from urlparse import urlparse
 
 from eventlet import import_patched
 
+
 urllib3 = import_patched('urllib3')
 
 from oiopy import exceptions
@@ -43,17 +44,17 @@ class API(object):
         """
         return self._service.create(*args, **kwargs)
 
-    def get(self, resource, **kwargs):
+    def get(self, *args, **kwargs):
         """
         Get a specific resource
         """
-        return self._service.get(resource, **kwargs)
+        return self._service.get(*args, **kwargs)
 
-    def delete(self, resource, **kwargs):
+    def delete(self, *args, **kwargs):
         """
         Delete a specific resource.
         """
-        return self._service.delete(resource, **kwargs)
+        return self._service.delete(*args, **kwargs)
 
     def list(self, limit=None, marker=None, **kwargs):
         """
