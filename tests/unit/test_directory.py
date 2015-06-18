@@ -228,6 +228,7 @@ class DirectoryTest(unittest.TestCase):
         srv = self.reference.service
         name = utils.random_string()
         resp = fakes.FakeResponse()
+        resp.status_code = 200
         srv.api.do_put = Mock(return_value=(resp, None))
         ref = srv.create(self.account, name, return_none=True)
         uri = "%s/%s" % (self.uri_base, name)
@@ -238,6 +239,7 @@ class DirectoryTest(unittest.TestCase):
         srv = self.reference.service
         name = utils.random_string()
         resp = fakes.FakeResponse()
+        resp.status_code = 200
         srv.api.do_put = Mock(return_value=(resp, None))
         srv.api.do_get = Mock(return_value=(resp, None))
         ref = srv.create(self.account, name)

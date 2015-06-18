@@ -107,6 +107,23 @@ class StorageAPI(API):
         directory = DirectoryAPI(endpoint_url, namespace)
         self.namespace = namespace
         self._service = ContainerService(self, directory=directory)
+        self._account_url = None
+
+    def list_containers(self, account, limit=None, marker=None, prefix=None,
+                        delimiter=None, end_marker=None, headers=None):
+        uri = "/v1.0/account/containers"
+        account_id = utils.quote(account, '')
+        d = {"id": account_id, "limit": limit, "marker": marker,
+             "delimiter": delimiter, "prefix": prefix, "end_marker": end_marker}
+        query_string = "&".join(["%s=%s" % (k, v) for k, v in d.iteritems()
+                                 if v is not None])
+        if query_string:
+            uri = "%s?%s" % (uri, query_string)
+
+        resp, resp_body = self._account_request(uri, 'GET', headers=headers)
+        containers = [self._service._make(account, c['name']) for c in
+                      resp_body]
+        return containers
 
     def list_container_objects(self, account, container, limit=None,
                                marker=None, prefix=None, delimiter=None,
@@ -238,6 +255,22 @@ class StorageAPI(API):
         """
         return self._service.delete_object(account, container, obj,
                                            headers=headers)
+
+    def _account_request(self, uri, method, **kwargs):
+        account_url = self.get_account_url()
+        uri = "%s%s" % (account_url, uri)
+        resp, resp_body = self._request(uri, method, **kwargs)
+        return resp, resp_body
+
+    def get_account_url(self):
+        uri = '/lb/%s/account' % self.namespace
+        resp, resp_body = self._request(uri, 'GET')
+        if resp.status_code == 200:
+            instance_info = resp_body[0]
+            return 'http://%s/' % instance_info['addr']
+        else:
+            raise exceptions.ClientException("could not find account instance "
+                                             "url")
 
 
 class StorageObject(Resource):
@@ -371,7 +404,7 @@ class ContainerService(Service):
         total_size = int(
             headers.get(container_headers["size"], "0"))
         ns = headers.get(container_headers["ns"])
-        name = container
+        name = utils.get_id(container)
         data = {"name": name,
                 "account": account,
                 "total_size": total_size,
@@ -438,7 +471,8 @@ class ContainerService(Service):
 
 
     @ensure_container
-    def create_object(self, container, file_or_path=None, data=None, etag=None,
+    def create_object(self, account, container, file_or_path=None, data=None,
+                      etag=None,
                       obj_name=None, content_type=None, content_length=None,
                       metadata=None, headers=None, return_none=False):
 
@@ -449,7 +483,7 @@ class ContainerService(Service):
                                 return_none=return_none)
 
     @ensure_container
-    def delete_object(self, container, obj, headers=None):
+    def delete_object(self, account, container, obj, headers=None):
 
         return container.delete_object(obj, headers=headers)
 
@@ -479,31 +513,32 @@ class ContainerService(Service):
         return objects
 
     @ensure_container
-    def fetch_object(self, container, obj, size=None, offset=0,
+    def fetch_object(self, account, container, obj, size=None, offset=0,
                      with_meta=False, headers=None):
 
         return container.fetch(obj, size=size, offset=offset,
                                with_meta=with_meta, headers=headers)
 
     @ensure_container
-    def set_object_metadata(self, container, obj, metadata, clear=False,
-                            headers=None):
+    def set_object_metadata(self, account, container, obj, metadata,
+                            clear=False, headers=None):
 
         return container.set_object_metadata(obj, metadata, clear=clear,
                                              headers=headers)
 
     @ensure_container
-    def get_object_metadata(self, container, obj, headers=None):
+    def get_object_metadata(self, account, container, obj, headers=None):
 
         return container.get_object_metadata(obj, headers=headers)
 
     @ensure_container
-    def delete_object_metadata(self, container, obj, keys, headers=None):
+    def delete_object_metadata(self, account, container, obj, keys,
+                               headers=None):
 
         return container.delete_object_metadata(obj, keys, headers=headers)
 
     @ensure_container
-    def get_object(self, container, obj, headers=None):
+    def get_object(self, account, container, obj, headers=None):
 
         return container.get_object(obj, headers=headers)
 

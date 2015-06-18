@@ -4,10 +4,10 @@ from oiopy import directory
 directory = directory.DirectoryAPI('http://localhost', 'NS')
 
 # Check has reference
-print directory.has("test")
+print directory.has("myaccount", "test")
 
 # Create reference
-reference = directory.create("test")
+reference = directory.create("myaccount", "test")
 
 # Set properties to reference
 reference.set_properties({"a": "1", "b": "2"})
