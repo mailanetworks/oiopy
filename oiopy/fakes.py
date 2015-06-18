@@ -14,8 +14,6 @@
 
 from eventlet import Timeout, sleep
 
-from oiopy.utils import InsensitiveDict
-from oiopy.http import Response
 from oiopy.directory import DirectoryAPI
 from oiopy.directory import ReferenceService
 from oiopy.directory import Reference
@@ -24,6 +22,7 @@ from oiopy.object_storage import StorageObjectService
 from oiopy.object_storage import StorageObject
 from oiopy.object_storage import ContainerService
 from oiopy.object_storage import Container
+from oiopy.http import requests
 
 
 class FakeAPI(object):
@@ -37,9 +36,8 @@ class FakeService(object):
         self.api = FakeAPI()
 
 
-class FakeResponse(Response):
-    status_code = 200
-    headers = {}
+class FakeResponse(requests.Response):
+    pass
 
 
 def fake_http_connect(*status_iter, **kwargs):
@@ -102,7 +100,7 @@ def fake_http_request(*status_iter, **kwargs):
         resp = FakeResponse()
         resp.status_code = status_code
         resp._content = body or ''
-        resp.headers = InsensitiveDict(headers)
+        resp.headers = headers
         return resp
 
     request.status_iter = status_iter

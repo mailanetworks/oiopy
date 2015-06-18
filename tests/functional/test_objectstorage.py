@@ -49,7 +49,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
             try:
                 self.storage.delete_object(self.account, self.container_name,
                                            obj)
-            except Exception:
+            except Exception as e:
                 pass
 
         for container in [self.container_name,
@@ -57,7 +57,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.container_name_3]:
             try:
                 self.storage.delete(self.account, container)
-            except Exception:
+            except Exception as e:
                 pass
 
     def test_stat_container(self):
@@ -131,3 +131,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.container.delete_object(self.object_name)
         self.assertRaises(exceptions.NoSuchObject,
                           self.container.get_object, self.object_name)
+
+    def test_list_account(self):
+        containers = self.storage.list_containers(self.account)
+        self.assertEqual(len(containers), 2)

@@ -14,11 +14,11 @@ FAKE_URL = "http://localhost:8888"
 
 @contextmanager
 def set_proxyd_request(*args, **kwargs):
-    old = oiopy.api.API._proxyd_request
+    old = oiopy.api.API._http_request
 
     new = fakes.fake_http_request(*args, **kwargs)
     try:
-        oiopy.api.API._proxyd_request = new
+        oiopy.api.API._http_request = new
         yield new
         unused_status = list(new.status_iter)
         if unused_status:
