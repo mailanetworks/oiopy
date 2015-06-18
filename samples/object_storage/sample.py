@@ -4,13 +4,13 @@ from oiopy import object_storage
 storage = object_storage.StorageAPI('http://localhost', 'NS')
 
 # Create a container
-container = storage.create("test")
+container = storage.create("myaccount", "test")
 
 # Get container metadata
 metadata = container.get_metadata()
 
 # Create object with string data
-obj = storage.store_object(container, "object0", "data")
+obj = storage.store_object("myaccount", container, "object0", "data")
 
 # Create object with file object
 with open('test_file', 'rb') as f:

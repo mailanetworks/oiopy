@@ -13,15 +13,9 @@
 
 
 import json
-from urlparse import urlparse
-
-from eventlet import import_patched
-
-
-urllib3 = import_patched('urllib3')
 
 from oiopy import exceptions
-from oiopy.http import Response
+from oiopy.http import requests
 
 
 class API(object):
@@ -30,13 +24,10 @@ class API(object):
     """
 
     def __init__(self, endpoint_url):
-        self.version = "v1.0"
+        self.version = "v2.0"
         self._service = None
-        parsed = urlparse(endpoint_url)
-        self.proxyd_host = parsed.netloc
-        self.endpoint_uri = "%s/%s" % (parsed.path, self.version)
-        self.proxyd_pool = urllib3.HTTPConnectionPool(self.proxyd_host,
-                                                      maxsize=5)
+        self.endpoint_uri = "%s/%s" % (endpoint_url, self.version)
+        self.session = requests.Session()
 
     def create(self, *args, **kwargs):
         """
@@ -62,27 +53,27 @@ class API(object):
         """
         return self._service.list(limit=limit, marker=marker, **kwargs)
 
-    def _proxyd_request(self, method, uri, data=None, headers=None):
+    def _http_request(self, method, uri, data=None, headers=None):
         """
-        proxyd request
+        http request
         """
         if not headers:
             headers = {}
         headers['connection'] = 'keep-alive'
 
-        raw = self.proxyd_pool.urlopen(method, uri, body=data, headers=headers)
-        resp = Response()
-        resp.status_code = raw.status
-        resp.reason = raw.reason
-        resp.headers = raw.headers
-        resp._content = raw.data
+        req = requests.Request(method, uri, data=data, headers=headers)
+        prepped = req.prepare()
+
+        resp = self.session.send(prepped)
+
         return resp
 
     def _request(self, uri, method, **kwargs):
         """
         Execute the request
         """
-        uri = "%s%s" % (self.endpoint_uri, uri)
+        if not uri.startswith('http://'):
+            uri = "%s%s" % (self.endpoint_uri, uri)
         data = None
         if "body" in kwargs:
             data = json.dumps(kwargs.pop("body"))
@@ -90,7 +81,7 @@ class API(object):
             headers = kwargs.pop("headers")
         else:
             headers = None
-        resp = self._proxyd_request(method, uri, data, headers)
+        resp = self._http_request(method, uri, data, headers)
         try:
             body = resp.json()
         except ValueError:

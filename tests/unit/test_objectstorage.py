@@ -78,6 +78,32 @@ class ObjectStorageTest(unittest.TestCase):
         obj = utils.random_string()
         self.assertRaises(exceptions.NoSuchObject, test, self, obj)
 
+    def test_api_list_containers(self):
+        resp = fakes.FakeResponse()
+        name = utils.random_string()
+        marker = utils.random_string()
+        delimiter = utils.random_string()
+        end_marker = utils.random_string()
+        prefix = utils.random_string()
+        limit = random.randint(1, 1000)
+        self.api._request = Mock(return_value=(resp, [{"name": name}]))
+        self.api.get_account_url = Mock(return_value='')
+        containers = self.api.list_containers(self.account, limit=limit,
+                                              marker=marker,
+                                              prefix=prefix,
+                                              delimiter=delimiter,
+                                              end_marker=end_marker,
+                                              headers=self.headers)
+        qs = "end_marker=%s&prefix=%s&delimiter=%s&limit=%s&marker=%s&id=%s" % (
+            end_marker, prefix, delimiter, limit, marker, self.account)
+        uri = "/v1.0/account/containers?%s" % qs
+        self.api._request.assert_called_once_with(uri, 'GET',
+                                                  headers=self.headers)
+        self.assertEqual(len(containers), 1)
+        container = containers[0]
+        self.assertTrue(isinstance(container, Container))
+        self.assertEqual(container.name, name)
+
     def test_api_list_container_objects(self):
         name = utils.random_string()
         marker = utils.random_string()
