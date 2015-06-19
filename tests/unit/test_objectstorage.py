@@ -86,14 +86,15 @@ class ObjectStorageTest(unittest.TestCase):
         end_marker = utils.random_string()
         prefix = utils.random_string()
         limit = random.randint(1, 1000)
-        self.api._request = Mock(return_value=(resp, [{"name": name}]))
+        body = {"listing": [[name, 0, 0, 0]]}
+        self.api._request = Mock(return_value=(resp, body))
         self.api.get_account_url = Mock(return_value='')
-        containers = self.api.list_containers(self.account, limit=limit,
-                                              marker=marker,
-                                              prefix=prefix,
-                                              delimiter=delimiter,
-                                              end_marker=end_marker,
-                                              headers=self.headers)
+        containers, meta = self.api.list_containers(self.account, limit=limit,
+                                                    marker=marker,
+                                                    prefix=prefix,
+                                                    delimiter=delimiter,
+                                                    end_marker=end_marker,
+                                                    headers=self.headers)
         qs = "end_marker=%s&prefix=%s&delimiter=%s&limit=%s&marker=%s&id=%s" % (
             end_marker, prefix, delimiter, limit, marker, self.account)
         uri = "/v1.0/account/containers?%s" % qs

@@ -133,5 +133,17 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.container.get_object, self.object_name)
 
     def test_list_account(self):
-        containers = self.storage.list_containers(self.account)
+        containers, meta = self.storage.list_containers(self.account)
         self.assertEqual(len(containers), 2)
+        self.assertTrue(meta)
+        self.assertEqual(meta['id'], self.account)
+        self.assertEqual(meta['containers'], 2)
+        self.assertTrue(meta['ctime'])
+        self.assertEqual(meta['metadata'], {})
+
+    def test_stat_account(self):
+        info = self.storage.get_account(self.account)
+        self.assertEqual(info['id'], self.account)
+        self.assertEqual(info['containers'], 2)
+        self.assertTrue(info['ctime'])
+        self.assertEqual(info['metadata'], {})

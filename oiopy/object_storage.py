@@ -109,6 +109,13 @@ class StorageAPI(API):
         self._service = ContainerService(self, directory=directory)
         self._account_url = None
 
+    def get_account(self, account, headers=None):
+        uri = "/v1.0/account/show"
+        account_id = utils.quote(account, '')
+        uri = "%s?id=%s" % (uri, account_id)
+        resp, resp_body = self._account_request(uri, 'GET', headers=headers)
+        return resp_body
+
     def list_containers(self, account, limit=None, marker=None, prefix=None,
                         delimiter=None, end_marker=None, headers=None):
         uri = "/v1.0/account/containers"
@@ -121,9 +128,19 @@ class StorageAPI(API):
             uri = "%s?%s" % (uri, query_string)
 
         resp, resp_body = self._account_request(uri, 'GET', headers=headers)
-        containers = [self._service._make(account, c['name']) for c in
-                      resp_body]
-        return containers
+        listing = resp_body['listing']
+
+        containers = []
+        for c in listing:
+            container = self._service._make(account, c[0])
+            data = {"total_size": c[2],
+                    "total_objects": c[1],
+                    "is_subdir": bool(c[3])}
+            container._add_data(data)
+            containers.append(container)
+
+        del resp_body['listing']
+        return containers, resp_body
 
     def list_container_objects(self, account, container, limit=None,
                                marker=None, prefix=None, delimiter=None,
