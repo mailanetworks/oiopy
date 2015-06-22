@@ -24,15 +24,6 @@ utf8_decoder = codecs.getdecoder('utf-8')
 utf8_encoder = codecs.getencoder('utf-8')
 
 
-def get_id(id_or_obj):
-    if isinstance(id_or_obj, basestring):
-        return id_or_obj
-    try:
-        return id_or_obj.id
-    except AttributeError:
-        return id_or_obj
-
-
 def random_string(length=20):
     chars = string.ascii_letters
     return "".join(random.sample(chars, length))
@@ -52,3 +43,4 @@ class ContextPool(GreenPool):
     def __exit__(self, type, value, traceback):
         for coroutine in list(self.coroutines_running):
             coroutine.kill()
+

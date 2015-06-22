@@ -4,7 +4,7 @@ from ConfigParser import SafeConfigParser
 import os
 import testtools
 
-from oiopy.object_storage import StorageAPI
+from oiopy.object_storage import ObjectStorageAPI
 from oiopy import exceptions
 from oiopy import utils
 
@@ -36,18 +36,19 @@ class TestObjectStorageFunctional(testtools.TestCase):
 
         self.test_data = b'1337' * 10
         self.hash_data = "894A14D048263CA40300302C7A5DB67C"
-        self.storage = StorageAPI(self.proxyd_uri, self.namespace)
+        self.storage = ObjectStorageAPI(self.namespace, self.proxyd_uri)
 
-        self.container = self.storage.create(self.account, self.container_name)
-        self.container_2 = self.storage.create(self.account,
-                                               self.container_name_2)
-        self.container.create(obj_name=self.object_name, data=self.test_data)
+        self.storage.container_create(self.account, self.container_name)
+        self.storage.container_create(self.account, self.container_name_2)
+        self.storage.object_create(self.account, self.container_name,
+                                   obj_name=self.object_name,
+                                   data=self.test_data)
 
     def tearDown(self):
         super(TestObjectStorageFunctional, self).tearDown()
         for obj in (self.object_name, self.object_name_2):
             try:
-                self.storage.delete_object(self.account, self.container_name,
+                self.storage.object_delete(self.account, self.container_name,
                                            obj)
             except Exception as e:
                 pass
@@ -56,39 +57,46 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.container_name_2,
                           self.container_name_3]:
             try:
-                self.storage.delete(self.account, container)
+                self.storage.container_delete(self.account, container)
             except Exception as e:
                 pass
 
-    def test_stat_container(self):
-        self.container.reload()
-        self.assertIsNotNone(self.container.total_size)
-        self.assertTrue(self.container.namespace)
-        self.assertTrue(self.container.name)
+    def test_show_container(self):
+        info = self.storage.container_show(self.account, self.container_name)
+        self.assertTrue(info)
 
-    def test_list_container(self):
-        objs = self.container.list()
-        self.assertEqual(len(objs), 1)
-        self.assertEqual(objs[0].name, self.object_name)
+    def test_object_list(self):
+        l = self.storage.object_list(self.account, self.container_name)
+        self.assertEqual(len(l['objects']), 1)
+        obj = l['objects'][0]
+        self.assertEqual(obj['name'], self.object_name)
+        self.assertEqual(obj['hash'], '894A14D048263CA40300302C7A5DB67C')
+        self.assertEqual(obj['size'], 40)
+        self.assertEqual(obj['ver'], 0)
+        self.assertEqual(obj['deleted'], False)
+        self.assertTrue(obj['ctime'])
+        self.assertTrue(obj['system_metadata'])
+        self.assertTrue(obj['policy'])
 
     def test_create_container(self):
-        container = self.storage.create(self.account, self.container_name_3)
-        self.assertTrue(container)
+        self.storage.container_create(self.account,
+                                      self.container_name_3)
 
     def test_delete_container(self):
-        self.container_2.delete()
+        self.storage.container_delete(self.account, self.container_name_2)
         self.assertRaises(exceptions.NoSuchContainer,
-                          self.storage.get, self.account, self.container_name_2)
+                          self.storage.container_show, self.account,
+                          self.container_name_2)
 
     def test_container_metadata(self):
         key = "user." + utils.random_string()
         value = utils.random_string()
         meta = {key: value}
-        self.container.set_metadata(meta)
-        rmeta = self.container.get_metadata()
+        self.storage.container_update(self.account, self.container_name, meta)
+        rmeta = self.storage.container_show(self.account, self.container_name)
         self.assertEqual(rmeta.get(key), value)
-        self.container.delete_metadata([])
-        rmeta = self.container.get_metadata()
+        self.storage.container_update(self.account, self.container_name, [])
+        rmeta = self.storage.container_show(self.account, self.container_name)
         self.assertEqual(rmeta.get(key), None)
         self.assertTrue(rmeta.get("sys.m2.usage"))
         self.assertTrue(rmeta.get("sys.m2.ctime"))
@@ -97,14 +105,18 @@ class TestObjectStorageFunctional(testtools.TestCase):
         key = utils.random_string()
         value = utils.random_string()
         meta = {key: value}
-        self.container.set_object_metadata(self.object_name, meta)
-        rmeta = self.container.get_object_metadata(self.object_name)
+        self.storage.object_update(self.account, self.container_name,
+                                   self.object_name, meta)
+        rmeta = self.storage.object_show(self.account, self.container_name,
+                                         self.object_name)
         self.assertEqual(rmeta.get(key), value)
         key2 = utils.random_string()
         value2 = utils.random_string()
         meta2 = {key2: value2}
-        self.container.set_object_metadata(self.object_name, meta2, clear=True)
-        rmeta = self.container.get_object_metadata(self.object_name)
+        self.storage.object_update(self.account, self.container_name,
+                                   self.object_name, meta2, clear=True)
+        rmeta = self.storage.object_show(self.account, self.container_name,
+                                         self.object_name)
         self.assertEqual(rmeta.get(key), None)
         self.assertEqual(rmeta.get(key2), value2)
         self.assertEqual(rmeta.get("name"), self.object_name)
@@ -113,25 +125,47 @@ class TestObjectStorageFunctional(testtools.TestCase):
         self.assertTrue(rmeta.get("mime-type"))
 
     def test_fetch_object(self):
-        stream = self.container.fetch(self.object_name)
+        meta, stream = self.storage.object_fetch(self.account,
+                                                 self.container_name,
+                                                 self.object_name)
         data = "".join(stream)
         self.assertEqual(data, self.test_data)
 
     def test_fetch_partial_object(self):
-        stream = self.container.fetch(self.object_name, size=10, offset=4)
+        meta, stream = self.storage.object_fetch(self.account,
+                                                 self.container_name,
+                                                 self.object_name, size=10,
+                                                 offset=4)
         data = "".join(stream)
         self.assertEqual(data, self.test_data[4:10 + 4])
 
     def test_store_object(self):
-        self.container.create(obj_name=self.object_name, data=self.test_data)
-        obj = self.container.get_object(self.object_name)
+        self.storage.object_create(self.account,
+                                   self.container_name,
+                                   obj_name=self.object_name,
+                                   data=self.test_data)
+        obj = self.storage.object_show(self.account, self.container_name,
+                                       self.object_name)
         self.assertTrue(obj)
 
     def test_delete_object(self):
-        self.container.delete_object(self.object_name)
-        self.assertRaises(exceptions.NoSuchObject,
-                          self.container.get_object, self.object_name)
+        self.storage.object_delete(self.account, self.container_name,
+                                   self.object_name)
+        self.assertRaises(exceptions.NoSuchObject, self.storage.object_fetch,
+                          self.account, self.container_name, self.object_name)
 
     def test_list_account(self):
-        containers = self.storage.list_containers(self.account)
+        containers, meta = self.storage.container_list(self.account)
         self.assertEqual(len(containers), 2)
+        self.assertTrue(meta)
+        self.assertEqual(meta['id'], self.account)
+        self.assertEqual(meta['containers'], 2)
+        self.assertTrue(meta['ctime'])
+        self.assertEqual(meta['metadata'], {})
+
+    def test_stat_account(self):
+        info = self.storage.account_show(self.account)
+        self.assertEqual(info['id'], self.account)
+        self.assertEqual(info['containers'], 2)
+        self.assertTrue(info['ctime'])
+        self.assertEqual(info['metadata'], {})
