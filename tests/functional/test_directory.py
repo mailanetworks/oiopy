@@ -30,7 +30,7 @@ class TestDirectoryFunctional(testtools.TestCase):
         self.reference_name_2 = 'func-test-reference-%s-2' % uuid.uuid4()
         self.reference_name_3 = 'func-test-reference-%s-3' % uuid.uuid4()
 
-        self.directory = DirectoryAPI(self.proxyd_uri, self.namespace)
+        self.directory = DirectoryAPI(self.namespace, self.proxyd_uri)
 
         self.directory.create(self.account, self.reference_name)
         self.directory.create(self.account, self.reference_name_2)
@@ -53,7 +53,7 @@ class TestDirectoryFunctional(testtools.TestCase):
 
     def test_stat_reference(self):
         reference = self.directory.get(self.account, self.reference_name)
-        self.assertTrue(reference.name)
+        self.assertTrue(reference)
 
     def test_list_services_reference(self):
         services = self.directory.list_services(self.account,
@@ -61,8 +61,7 @@ class TestDirectoryFunctional(testtools.TestCase):
         self.assertTrue(len(services))
 
     def test_create_reference(self):
-        container = self.directory.create(self.account, self.reference_name_3)
-        self.assertTrue(container)
+        self.directory.create(self.account, self.reference_name_3)
 
     def test_delete_reference(self):
         self.directory.delete(self.account, self.reference_name_2)

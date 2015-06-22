@@ -1,45 +1,38 @@
 from oiopy import object_storage
 
 # Create storage API
-storage = object_storage.StorageAPI('http://localhost', 'NS')
+storage = object_storage.ObjectStorageAPI("NS", "http://localhost")
 
 # Create a container
-container = storage.create("myaccount", "test")
+container = storage.container_create("myaccount", "test")
 
 # Get container metadata
-metadata = container.get_metadata()
+info = storage.container_show("myaccount", "test")
 
 # Create object with string data
-obj = storage.store_object("myaccount", container, "object0", "data")
+obj = storage.object_create("myaccount", container, obj_name="object0",
+                            data="data")
 
 # Create object with file object
 with open('test_file', 'rb') as f:
-    obj1 = container.create(f, content_length=1024)
+    obj1 = storage.object_create("myaccount", "test", f, content_length=1024)
 
 # Fetch object content
-data = obj.fetch()
-
-# Object metadata
-print "Object Details"
-print "Name: %s" % obj.name
-print "Size: %s" % obj.size
-print "Hash: %s" % obj.hash
-print "Content Type: %s" % obj.content_type
-print "Hash Method: %s" % obj.hash_method
-print "Version: %s" % obj.version
-print "Policy: %s" % obj.policy
+meta, stream = storage.object_fetch("myaccount", "test", "test_file")
 
 # List container
-objs = container.list()
+l = storage.object_list("myaccount", "test")
 
 print "Container listing"
-for obj in objs:
-    print "Object: %s" % obj.name
+for obj in l["listing"]:
+    print "Object: %s" % obj
 
 # Delete objects
-obj.delete()
-obj1.delete()
+storage.object_delete("myaccount", "test", "test_file")
+storage.object_delete("myaccount", "test", "object0")
+
 
 # Delete container
-container.delete()
+storage.container_delete("myaccount", "test")
+
 

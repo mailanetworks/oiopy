@@ -15,13 +15,7 @@
 from eventlet import Timeout, sleep
 
 from oiopy.directory import DirectoryAPI
-from oiopy.directory import ReferenceService
-from oiopy.directory import Reference
-from oiopy.object_storage import StorageAPI
-from oiopy.object_storage import StorageObjectService
-from oiopy.object_storage import StorageObject
-from oiopy.object_storage import ContainerService
-from oiopy.object_storage import Container
+from oiopy.object_storage import ObjectStorageAPI
 from oiopy.http import requests
 
 
@@ -30,13 +24,11 @@ class FakeAPI(object):
         pass
 
 
-class FakeService(object):
-    def __init__(self, *args, **kwargs):
-        super(FakeService, self).__init__(*args, **kwargs)
-        self.api = FakeAPI()
-
-
 class FakeResponse(requests.Response):
+    pass
+
+
+class FakeSession(requests.Session):
     pass
 
 
@@ -115,52 +107,9 @@ class FakeTimeoutStream(object):
         sleep(self.time)
 
 
-class FakeStorageAPI(StorageAPI):
-    def create(self, account, name):
-        return FakeContainer(self._service, {"name": name, "account": account})
+class FakeStorageAPI(ObjectStorageAPI):
+    pass
 
 
 class FakeDirectoryAPI(DirectoryAPI):
-    def create(self, account, name):
-        return FakeReference(self._service, {"name": name, "account": account})
-
-
-class FakeContainerService(ContainerService):
-    def __init__(self, api=None, directory=None, *args, **kwargs):
-        if api is None:
-            api = FakeStorageAPI()
-        if directory is None:
-            directory = FakeDirectoryAPI()
-        super(FakeContainerService, self).__init__(api, directory, *args,
-                                                   **kwargs)
-
-
-class FakeReferenceService(ReferenceService):
-    def __init__(self, api=None, *args, **kwargs):
-        if api is None:
-            api = FakeDirectoryAPI()
-        super(FakeReferenceService, self).__init__(api, *args, **kwargs)
-
-
-class FakeReference(Reference):
-    def __init__(self, *args, **kwargs):
-        super(FakeReference, self).__init__(*args, **kwargs)
-        self.service = FakeReferenceService(self.service.api)
-
-
-class FakeContainer(Container):
-    def __init__(self, *args, **kwargs):
-        super(FakeContainer, self).__init__(*args, **kwargs)
-        self.object_service = FakeStorageObjectService(self.service.api,
-                                                       uri_base=self.uri_base)
-
-
-class FakeStorageObjectService(StorageObjectService):
-    def __init__(self, api=None, *args, **kwargs):
-        if api is None:
-            api = FakeStorageAPI()
-        super(FakeStorageObjectService, self).__init__(api, *args, **kwargs)
-
-
-class FakeStorageObject(StorageObject):
     pass
