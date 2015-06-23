@@ -132,6 +132,8 @@ class ObjectStorageAPI(API):
         params = {'id': account_id}
         resp, resp_body = self._account_request('PUT', uri, params=params,
                                                 headers=headers)
+        created = (resp.status_code == 201)
+        return created
 
     def account_show(self, account, headers=None):
         uri = "/v1.0/account/show"
@@ -141,11 +143,11 @@ class ObjectStorageAPI(API):
                                                 headers=headers)
         return resp_body
 
-    def account_update(self, account, metadata, headers=None):
+    def account_update(self, account, metadata, to_delete=None, headers=None):
         uri = "/v1.0/account/update"
         account_id = utils.quote(account, '')
         uri = "%s?id=%s" % (uri, account_id)
-        data = json.dumps(metadata)
+        data = json.dumps({"metadata": metadata, "to_delete": to_delete})
         resp, resp_body = self._account_request('POST', uri, data=data,
                                                 headers=headers)
 
