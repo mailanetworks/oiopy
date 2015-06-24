@@ -68,6 +68,7 @@ def handle_container_not_found(fnc):
         except exceptions.NotFound as e:
             e.message = "Container '%s' does not exist." % container
             raise exceptions.NoSuchContainer(e)
+
     return _wrapped
 
 
@@ -79,6 +80,7 @@ def handle_object_not_found(fnc):
         except exceptions.NotFound as e:
             e.message = "Object '%s' does not exist." % obj
             raise exceptions.NoSuchObject(e)
+
     return _wrapped
 
 
@@ -309,9 +311,10 @@ class ObjectStorageAPI(API):
         if clear:
             resp, resp_body = self._action(uri, 'DelProperties', [],
                                            headers=headers)
-        args = metadata
-        resp, resp_body = self._action(uri, 'SetProperties', args,
-                                       headers=headers)
+        if metadata:
+            args = metadata
+            resp, resp_body = self._action(uri, 'SetProperties', args,
+                                           headers=headers)
 
     def _make_uri(self, account, container, obj=None):
         account = utils.quote(account, '')
