@@ -19,7 +19,7 @@ need is to initialize a `ObjectStorageAPI` object.
 To initialize it, you need the proxyd url and the namespace name:
 
     from oiopy.object_storage import ObjectStorageAPI
-    s = oiopy.ObjectStorageAPI("NS", "http://localhost:8000")
+    s = ObjectStorageAPI("NS", "http://localhost:8000")
 
 All of the sample code that follows assumes that you have correctly initialized
 a `ObjectStorageAPI` object.
@@ -41,7 +41,7 @@ Creating a Container
 
 Start by creating a container:
 
-    s.container_create("myaccount", "example")
+    s.container_create("myaccount", "mycontainer")
 
 Note that you will need to specify an Account name.
     
@@ -53,7 +53,7 @@ Show a Container
 
 To show a container:
 
-    info = s.container_show("myaccount", "example")
+    info = s.container_show("myaccount", "mycontainer")
     
 Note that if you try to get a non-existent container, a `NoSuchContainer`
 exception is raised.
@@ -62,10 +62,10 @@ Storing Objects
 ---------------
 
 This example creates an object named `object.txt` with the data provided, in the
-container `example`:
+container `mycontainer`:
 
     data = "Content example"
-    s.object_create("myaccount", "example", obj_name="object.txt", 
+    s.object_create("myaccount", "mycontainer", obj_name="object.txt", 
                         data=data)
   
 Note that if you try to store an object in a non-existent container, a
@@ -95,16 +95,17 @@ This sample code stores an object and retrieves it using the different
 parameters.
 
     data = "Content Example"
-    s.object_create("myaccount", "example", obj_name="object.txt", 
+    s.object_create("myaccount", "mycontainer", obj_name="object.txt", 
                         data=data)
 
     print "Fetch object"
-    meta, stream = s.object_fetch("myaccount", "example", "object.txt")
+    meta, stream = s.object_fetch("myaccount", "mycontainer", "object.txt")
     print "".join(stream)
 
     print
     print "Fetch partial object"
-    meta, stream = s.object_fetch(offset=8)
+    meta, stream = s.object_fetch("myaccount", "mycontainer", "object.txt", 
+                                    offset=8)
     print "".join(stream)
 
 
@@ -113,7 +114,7 @@ Deleting Objects
 
 Example:
 
-    s.object_delete("myaccount", "example", "object.txt")
+    s.object_delete("myaccount", "mycontainer", "object.txt")
     
 Note that if you try to delete a non-existent object, a `NoSuchObject`
 exception is raised.
@@ -124,17 +125,17 @@ Containers and Objects Metadata
 The Object Storage API lets you set and retrieve your own metadata on containers
 and objects.
 
-    s.container_create("myaccount", "example")
-    meta = s.container_show("myaccount", "example")
+    s.container_create("myaccount", "mycontainer")
+    meta = s.container_show("myaccount", "mycontainer")
     print "Metadata:", meta
     
 
 It should output and empty dict, unless you added metadata to this container.
 
     new_meta = {"color": "blue", "flag": "true"}
-    s.container_update("myaccount", "example", new_meta)
+    s.container_update("myaccount", "mycontainer", new_meta)
     
-    meta = s.container_show("myaccount", "example")
+    meta = s.container_show("myaccount", "mycontainer")
     print "Metadata:", meta
     
 It should now output:
@@ -149,7 +150,7 @@ You can use the methods '`object_show()` and `object_update()`.
 Listing Objects
 ---------------
 
-    objs = s.object_list("myaccount", "example")
+    objs = s.object_list("myaccount", "mycontainer")
     
 This returns a list of objects stored in the container.
 
@@ -168,20 +169,21 @@ its value.
 
 To illustrate these features, we create some objects in a container:
 
-    s.container_create("myaccount", "example")
+    s.container_create("myaccount", "mycontainer")
     for id in range(5):
-        s.object_create("myaccount", "example", obj_name="object%s" % id,
-                       "sample")
+        s.object_create("myaccount", "mycontainer", obj_name="object%s" % id,
+                       data="sample")
     start = ord("a")
     for id in xrange(start, start + 4):
-        s.object_create("myaccount", "example", obj_name="foo/%s" % chr(id), 
-                       "sample")
+        s.object_create("myaccount", "mycontainer", obj_name="foo/%s" % chr(id), 
+                       data="sample")
         
 First list all the objects:
 
-    objs = container.list()
+    l = s.object_list("myaccount", "mycontainer")
+    objs = l['objects']
     for obj in objs:
-        print obj.name
+        print obj['name']
 
 It should output:
     
@@ -199,12 +201,13 @@ Then let's use the paginating features:
 
     limit = 4
     marker = ""
-    objs = container.list(limit=limit, marker=marker)
-    print "Objects:", [obj.name for obj in objs]
+    l = s.object_list("myaccount", "mycontainer", limit=limit, marker=marker)
+    objs = l['objects']
+    print "Objects:", [obj['name'] for obj in objs]
     while objs:
-        marker = objs[-1].name
-        objs = container.list(limit=limit, marker=marker)
-        print "Objects:" , [obj.name for obj in objs]
+        marker = objs[-1]['name']
+        objs = s.object_list("myaccount", "mycontainer", limit=limit, marker=marker)
+        print "Objects:" , [obj['name'] for obj in objs]
  
 Here is the result:
 
@@ -216,8 +219,9 @@ Here is the result:
         
 How to use the `prefix` parameter:
 
-    objs = container.list(prefix="foo")
-    print "Objects:", [obj.name for obj in objs]
+    l = s.object_list("myaccount", "mycontainer", prefix="foo")
+    objs = l['objects']
+    print "Objects:", [obj['name'] for obj in objs]
     
 This only outputs the objects starting with "foo":
 
@@ -226,8 +230,9 @@ This only outputs the objects starting with "foo":
 
 How to use the `delimiter` parameter:
     
-    objs = container.list(delimiter="/")
-    print "Objects:", [obj.name for obj in objs]
+    l = s.object_list("myaccount", "mycontainer", delimiter="/")
+    objs = l['objects']
+    print "Objects:", [obj['name'] for obj in objs]
     
 This excludes all the objects in the nested 'foo' folder.
 
@@ -243,7 +248,7 @@ Deleting Containers
 There is several options to delete containers.
 Example:
 
-    s.container_delete("myaccount", "example")
+    s.container_delete("myaccount", "mycontainer")
 
 You can not delete a container if it still holds objects, if you try to do so
 a `ContainerNotEmpty` exception is raised.
