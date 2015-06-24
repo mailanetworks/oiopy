@@ -128,7 +128,7 @@ class ObjectStorageAPI(API):
         self.directory = DirectoryAPI(namespace, endpoint, session=self.session)
         self.namespace = namespace
 
-    def account_create(self, account, headers):
+    def account_create(self, account, headers=None):
         uri = '/v1.0/account/create'
         account_id = utils.quote(account, '')
         params = {'id': account_id}
