@@ -61,15 +61,32 @@ class OpenIOShell(app.App):
 
     def configure_logging(self):
         super(OpenIOShell, self).configure_logging()
+        root_logger = logging.getLogger('')
+
+        if self.options.verbose_level == 0:
+            root_logger.setLevel(logging.ERROR)
+        elif self.options.verbose_level == 1:
+            root_logger.setLevel(logging.WARNING)
+        elif self.options.verbose_level == 2:
+            root_logger.setLevel(logging.INFO)
+        elif self.options.verbose_level >= 3:
+            root_logger.setLevel(logging.DEBUG)
+
+
         requests_log = logging.getLogger('requests')
         requests_log.setLevel(logging.ERROR)
+
         cliff_log = logging.getLogger('cliff')
         cliff_log.setLevel(logging.ERROR)
+
+        stevedore_log = logging.getLogger('stevedore')
+        stevedore_log.setLevel(logging.ERROR)
 
     def run(self, argv):
         try:
             return super(OpenIOShell, self).run(argv)
         except Exception as e:
+            self.log.error('Exception raised: ' + str(e))
             return 1
 
     def build_option_parser(self, description, version):
@@ -113,14 +130,6 @@ class OpenIOShell(app.App):
         self.account_name = self.options.account_name
         self.proxyd_url = self.options.proxyd_url
 
-        if not self.ns:
-            raise Exception('Missing Namespace --oio-ns (Env: OIO_NS)')
-        if not self.account_name:
-            raise Exception('Missing Account --oio-account (Env: OIO_ACCOUNT)')
-        if not self.proxyd_url:
-            raise Exception('Missing Proxyd URL --oio-proxyd-url '
-                            '(Env: OIO_PROXYD_URL)')
-
         self.requests_session = requests.Session()
         self.storage = ObjectStorageAPI(self.ns, self.proxyd_url,
                                         session=self.requests_session)
@@ -128,6 +137,18 @@ class OpenIOShell(app.App):
                                       session=self.requests_session)
 
         self.print_help_if_requested()
+
+    def prepare_to_run_command(self, cmd):
+        self.log.info(
+            'command: %s -> %s.%s',
+            getattr(cmd, 'cmd_name', '<none>'),
+            cmd.__class__.__module__,
+            cmd.__class__.__name__,
+        )
+
+    def clean_up(self, cmd, result, err):
+        self.log.debug('clean up %s: %s', cmd.__class__.__name__, err or '')
+
 
 
 def main(argv=sys.argv[1:]):
