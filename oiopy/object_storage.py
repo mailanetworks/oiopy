@@ -148,10 +148,10 @@ class ObjectStorageAPI(API):
     def account_update(self, account, metadata, to_delete=None, headers=None):
         uri = "/v1.0/account/update"
         account_id = utils.quote(account, '')
-        uri = "%s?id=%s" % (uri, account_id)
+        params = {'id': account_id}
         data = json.dumps({"metadata": metadata, "to_delete": to_delete})
-        resp, resp_body = self._account_request('POST', uri, data=data,
-                                                headers=headers)
+        resp, resp_body = self._account_request('POST', uri, params=params,
+                                                data=data, headers=headers)
 
     def container_create(self, account, container, headers=None):
         try:

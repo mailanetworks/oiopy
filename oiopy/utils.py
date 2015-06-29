@@ -16,6 +16,7 @@ import random
 import string
 from urllib import quote as _quote
 
+import os
 import codecs
 from eventlet import GreenPool
 
@@ -44,3 +45,14 @@ class ContextPool(GreenPool):
         for coroutine in list(self.coroutines_running):
             coroutine.kill()
 
+
+def env(*vars, **kwargs):
+    """Search for the first defined of possibly many env vars
+    Returns the first environment variable defined in vars, or
+    returns the default defined in kwargs.
+    """
+    for v in vars:
+        value = os.environ.get(v, None)
+        if value:
+            return value
+    return kwargs.get('default', '')
