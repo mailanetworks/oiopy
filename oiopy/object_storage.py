@@ -202,14 +202,14 @@ class ObjectStorageAPI(API):
     def container_update(self, account, container, metadata, clear=False,
                          headers=None):
         uri = self._make_uri(account, container)
-        if clear:
-            uri += '?flush=1'
+
         if not metadata:
             resp, resp_body = self._action(uri, 'DelProperties', [],
                                            headers=headers)
         else:
+            params = {'flush': 1} if clear else {}
             resp, resp_body = self._action(uri, 'SetProperties', metadata,
-                                           headers=headers)
+                                           headers=headers, params=params)
 
     @handle_container_not_found
     def object_create(self, account, container, file_or_path=None, data=None,
@@ -325,11 +325,11 @@ class ObjectStorageAPI(API):
             uri += '/%s' % obj
         return uri
 
-    def _action(self, uri, action, args, headers=None):
+    def _action(self, uri, action, args, headers=None, **kwargs):
         uri = "%s/action" % uri
         body = {"action": action, "args": args}
         data = json.dumps(body)
-        return self._request('POST', uri, data=data, headers=headers)
+        return self._request('POST', uri, data=data, headers=headers, **kwargs)
 
     def _get_account_url(self):
         uri = 'lb/%s/account' % self.namespace

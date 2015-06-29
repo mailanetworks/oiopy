@@ -90,14 +90,19 @@ class TestObjectStorageFunctional(testtools.TestCase):
 
     def test_container_metadata(self):
         key = "user." + utils.random_string()
+        key2 = "user." + utils.random_string()
         value = utils.random_string()
+
         meta = {key: value}
         self.storage.container_update(self.account, self.container_name, meta)
         rmeta = self.storage.container_show(self.account, self.container_name)
         self.assertEqual(rmeta.get(key), value)
-        self.storage.container_update(self.account, self.container_name, [])
+        self.storage.container_update(self.account, self.container_name,
+                                      {key2: value},
+                                      True)
         rmeta = self.storage.container_show(self.account, self.container_name)
         self.assertEqual(rmeta.get(key), None)
+        self.assertEqual(rmeta.get(key2), value)
         self.assertTrue(rmeta.get("sys.m2.usage"))
         self.assertTrue(rmeta.get("sys.m2.ctime"))
 
