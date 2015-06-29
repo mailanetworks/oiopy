@@ -2,8 +2,13 @@ from cliff import show
 from cliff import command
 from cliff import lister
 
+from oiopy.cli.utils import KeyValueAction
+
+
 
 class CreateContainer(command.Command):
+    """Create container"""
+
     def get_parser(self, prog_name):
         parser = super(CreateContainer, self).get_parser(prog_name)
         parser.add_argument(
@@ -21,8 +26,47 @@ class CreateContainer(command.Command):
                 container
             )
 
+class SetContainer(command.Command):
+    """Set container"""
+
+    def get_parser(self, prog_name):
+        parser = super(SetContainer, self).get_parser(prog_name)
+        parser.add_argument(
+            'container',
+            metavar='<container>',
+            help='Container name'
+        )
+        parser.add_argument(
+            '--property',
+            metavar='<key=value>',
+            action=KeyValueAction,
+            help='Set a property on <container>'
+        )
+        parser.add_argument(
+            '--clear',
+            dest='clear',
+            default=False,
+            help='Clear previous properties',
+            action="store_true"
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        metadata = {}
+        for m in parsed_args.metadata:
+            k, v = m.split(':', 1)
+            metadata['user.%s' % k] = v
+        self.app.storage.container_update(
+            self.app.account_name,
+            parsed_args.container,
+            metadata,
+            clear=parsed_args.clear
+        )
+
 
 class DeleteContainer(command.Command):
+    """Delete container"""
+
     def get_parser(self, prog_name):
         parser = super(DeleteContainer, self).get_parser(prog_name)
         parser.add_argument(
@@ -42,6 +86,8 @@ class DeleteContainer(command.Command):
 
 
 class ShowContainer(show.ShowOne):
+    """Show container"""
+
     def get_parser(self, prog_name):
         parser = super(ShowContainer, self).get_parser(prog_name)
         parser.add_argument(
@@ -61,6 +107,8 @@ class ShowContainer(show.ShowOne):
 
 
 class ListContainer(lister.Lister):
+    """List container"""
+
     def get_parser(self, prog_name):
         parser = super(ListContainer, self).get_parser(prog_name)
 

@@ -74,7 +74,12 @@ class OpenIOShell(app.App):
 
 
         requests_log = logging.getLogger('requests')
-        requests_log.setLevel(logging.ERROR)
+
+        if self.options.debug:
+            requests_log.setLevel(logging.DEBUG)
+        else:
+            requests_log.setLevel(logging.ERROR)
+
 
         cliff_log = logging.getLogger('cliff')
         cliff_log.setLevel(logging.ERROR)
@@ -101,7 +106,6 @@ class OpenIOShell(app.App):
             default=utils.env('OIO_NS'),
             help='Namespace name (Env: OIO_NS)',
         )
-
         parser.add_argument(
             '--oio-account',
             metavar='<account>',
@@ -109,13 +113,12 @@ class OpenIOShell(app.App):
             default=utils.env('OIO_ACCOUNT'),
             help='Account name (Env: OIO_ACCOUNT)'
         )
-
         parser.add_argument(
             '--oio-proxyd-url',
             metavar='<proxyd url>',
             dest='proxyd_url',
             default=utils.env('OIO_PROXYD_URL'),
-            help='Account name (Env: OIO_PROXYD_URL)'
+            help='Proxyd URL (Env: OIO_PROXYD_URL)'
         )
 
         return parser
@@ -130,13 +133,17 @@ class OpenIOShell(app.App):
         self.account_name = self.options.account_name
         self.proxyd_url = self.options.proxyd_url
 
+        self.print_help_if_requested()
+
         self.requests_session = requests.Session()
+        if not self.ns:
+            raise RuntimeError('namespace not specified')
+        if not self.proxyd_url:
+            raise RuntimeError('Proxyd URL not specified')
         self.storage = ObjectStorageAPI(self.ns, self.proxyd_url,
                                         session=self.requests_session)
         self.directory = DirectoryAPI(self.ns, self.proxyd_url,
                                       session=self.requests_session)
-
-        self.print_help_if_requested()
 
     def prepare_to_run_command(self, cmd):
         self.log.info(
