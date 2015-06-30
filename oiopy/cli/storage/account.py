@@ -45,27 +45,33 @@ class SetAccount(command.Command):
     """Set account"""
 
     def get_parser(self, prog_name):
-        parser = super(UpdateAccount, self).get_parser(prog_name)
+        parser = super(SetAccount, self).get_parser(prog_name)
         parser.add_argument(
             'account',
             metavar='<account>',
             help='Account to modify',
         )
         parser.add_argument(
+            '-p',
             '--property',
             metavar='<key=value>',
             action=KeyValueAction,
-            help='Property to add to this account'
+            help='Property to add/update to this account'
+        )
+        parser.add_argument(
+            '-d',
+            '--delete-property',
+            action='append',
+            metavar='<key>',
+            help='Property to delete for this account'
         )
         return parser
 
     def take_action(self, parsed_args):
-        metadata = {}
-        for m in parsed_args.metadatas:
-            k, v = m.split(':', 1)
-            metadata[k] = v
+        print parsed_args.delete_property
         self.app.storage.account_update(
             account=parsed_args.account,
-            metadata=metadata
+            metadata=parsed_args.property,
+            to_delete=parsed_args.delete_property
         )
 

@@ -176,9 +176,9 @@ class SaveObject(command.Command):
         if not os.path.exists(os.path.dirname(file)):
             if len(os.path.dirname(file)) > 0:
                 os.makedirs(os.path.dirname(file))
-            with open(file, 'wb') as f:
-                for chunk in stream:
-                    f.write(chunk)
+        with open(file, 'wb') as f:
+            for chunk in stream:
+                f.write(chunk)
 
 class ListObject(lister.Lister):
     """List objects in container"""
