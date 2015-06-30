@@ -1,3 +1,6 @@
+import io
+import os
+
 from cliff import command
 from cliff import show
 from cliff import lister
@@ -21,7 +24,23 @@ class CreateObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        container = parsed_args.container
+
+        def get_file_size(f):
+            currpos = f.tell()
+            f.seek(0, 2)
+            total_size = f.tell()
+            f.seek(currpos)
+            return total_size
+
+        for obj in parsed_args.objects:
+            with io.open(obj, 'rb') as f:
+                self.app.client_manager.storage.object_create(
+                    self.app.client_manager.get_account(),
+                    container,
+                    file_or_path=f,
+                    content_length=get_file_size(f)
+                )
 
 class DeleteObject(command.Command):
     """Delete object from container"""
@@ -42,7 +61,14 @@ class DeleteObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        container = parsed_args.container
+
+        for obj in parsed_args.objects:
+            self.app.client_manager.storage.object_delete(
+                self.app.client_manager.get_account(),
+                container,
+                obj
+            )
 
 class ShowObject(show.ShowOne):
     """Show object"""
@@ -62,7 +88,14 @@ class ShowObject(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        container = parsed_args.container
+
+        data = self.app.client_manager.storage.object_show(
+            self.app.client_manager.get_account(),
+            container,
+            parsed_args.object
+        )
+        return zip(*sorted(data.iteritems()))
 
 class SetObject(command.Command):
     """Set object"""
@@ -105,13 +138,46 @@ class SaveObject(command.Command):
             metavar='<object>',
             help='Object to save'
         )
+        parser.add_argument(
+            '--size',
+            metavar='<size>',
+            type=int,
+            help='Number of bytes to fetch'
+        )
+        parser.add_argument(
+            '--offset',
+            metavar='<offset>',
+            type=int,
+            help='Fetch data from <offset>'
+        )
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        container = parsed_args.container
+        obj = parsed_args.object
+
+        file = parsed_args.file        
+        if not file:
+            file = obj
+        size = parsed_args.size
+        offset = parsed_args.offset
+
+        meta, stream = self.app.client_manager.storage.object_fetch(
+            self.app.client_manager.get_account(),
+            container,
+            obj,
+            size=size,
+            offset=offset
+        )
+        if not os.path.exists(os.path.dirname(file)):
+            if len(os.path.dirname(file)) > 0:
+                os.makedirs(os.path.dirname(file))
+        with open(file, 'wb') as f:
+            for chunk in stream:
+                f.write(chunk)
 
 class ListObject(lister.Lister):
-    """List objects"""
+    """List objects in container"""
 
     def get_parser(self, prog_name):
         parser = super(ListObject, self).get_parser(prog_name)
@@ -145,6 +211,22 @@ class ListObject(lister.Lister):
             metavar='<limit>',
             help='Limit the number of objects returned'
         )
+        return parser
 
     def take_action(self, parsed_args):
-        pass
+        container = parsed_args.container
+
+        resp = self.app.client_manager.storage.object_list(
+            self.app.client_manager.get_account(),
+            container,
+            limit=parsed_args.limit,
+            marker=parsed_args.marker,
+            end_marker=parsed_args.end_marker,
+            prefix=parsed_args.prefix,
+            delimiter=parsed_args.delimiter
+        )
+        l = resp['objects']
+        results = ((obj['name'], obj['size'], obj['hash']) for obj in l)
+        columns = ('Name', 'Size', 'Hash')
+        return (columns, results)
+

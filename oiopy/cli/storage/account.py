@@ -17,7 +17,7 @@ class ShowAccount(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
-        data = self.app.storage.account_show(
+        data = self.app.client_manager.storage.account_show(
             account=parsed_args.account
         )
         return zip(*sorted(data.iteritems()))
@@ -37,7 +37,7 @@ class CreateAccount(command.Command):
 
     def take_action(self, parsed_args):
         for account in parsed.args.accounts:
-            data = self.app.storage.account_create(
+            data = self.app.client_manager.storage.account_create(
                 account=account
             )
 
@@ -45,27 +45,33 @@ class SetAccount(command.Command):
     """Set account"""
 
     def get_parser(self, prog_name):
-        parser = super(UpdateAccount, self).get_parser(prog_name)
+        parser = super(SetAccount, self).get_parser(prog_name)
         parser.add_argument(
             'account',
             metavar='<account>',
             help='Account to modify',
         )
         parser.add_argument(
+            '-p',
             '--property',
             metavar='<key=value>',
             action=KeyValueAction,
-            help='Property to add to this account'
+            help='Property to add/update to this account'
+        )
+        parser.add_argument(
+            '-d',
+            '--delete-property',
+            action='append',
+            metavar='<key>',
+            help='Property to delete for this account'
         )
         return parser
 
     def take_action(self, parsed_args):
-        metadata = {}
-        for m in parsed_args.metadatas:
-            k, v = m.split(':', 1)
-            metadata[k] = v
-        self.app.storage.account_update(
+        print parsed_args.delete_property
+        self.app.client_manager.storage.account_update(
             account=parsed_args.account,
-            metadata=metadata
+            metadata=parsed_args.property,
+            to_delete=parsed_args.delete_property
         )
 

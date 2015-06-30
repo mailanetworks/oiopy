@@ -21,8 +21,8 @@ class CreateContainer(command.Command):
 
     def take_action(self, parsed_args):
         for container in parsed_args.containers:
-            self.app.storage.container_create(
-                self.app.account_name,
+            self.app.client_manager.storage.container_create(
+                self.app.client_manager.get_account(),
                 container
             )
 
@@ -56,8 +56,8 @@ class SetContainer(command.Command):
         for m in parsed_args.metadata:
             k, v = m.split(':', 1)
             metadata['user.%s' % k] = v
-        self.app.storage.container_update(
-            self.app.account_name,
+        self.app.client_manager.storage.container_update(
+            self.app.client_manager.get_account(),
             parsed_args.container,
             metadata,
             clear=parsed_args.clear
@@ -79,8 +79,8 @@ class DeleteContainer(command.Command):
 
     def take_action(self, parsed_args):
         for container in parsed_args.containers:
-            self.app.storage.container_delete(
-                self.app.account_name,
+            self.app.client_manager.storage.container_delete(
+                self.app.client_manager.get_account(),
                 container
             )
 
@@ -99,8 +99,8 @@ class ShowContainer(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
-        data = self.app.storage.container_show(
-            self.app.account_name,
+        data = self.app.client_manager.storage.container_show(
+            self.app.client_manager.get_account(),
             parsed_args.container
         )
         return zip(*sorted(data.iteritems()))
@@ -140,7 +140,6 @@ class ListContainer(lister.Lister):
         return parser
 
     def take_action(self, parsed_args):
-
         columns = ('Name', 'Bytes', 'Count')
 
         kwargs = {}
@@ -155,8 +154,8 @@ class ListContainer(lister.Lister):
         if parsed_args.limit:
             kwargs['limit'] = parsed_args.limit
 
-        l, meta = self.app.storage.container_list(
-            self.app.account_name,
+        l, meta = self.app.client_manager.storage.container_list(
+            self.app.client_manager.get_account(),
             **kwargs
         )
 

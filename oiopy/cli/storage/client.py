@@ -1,0 +1,19 @@
+import logging
+from oiopy.object_storage import ObjectStorageAPI
+
+LOG = logging.getLogger(__name__)
+
+API_NAME = 'storage'
+
+def make_client(instance):
+    namespace = instance.namespace
+    endpoint = instance.get_endpoint('storage')
+    client = ObjectStorageAPI(
+        session=instance.session,
+        endpoint=endpoint,
+        namespace=instance.namespace
+    )
+    return client
+
+def build_option_parser(parser):
+    return parser
