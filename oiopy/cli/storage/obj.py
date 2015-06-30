@@ -24,7 +24,6 @@ class CreateObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         container = parsed_args.container
 
         def get_file_size(f):
@@ -36,8 +35,8 @@ class CreateObject(command.Command):
 
         for obj in parsed_args.objects:
             with io.open(obj, 'rb') as f:
-                self.app.storage.object_create(
-                    account,
+                self.app.client_manager.storage.object_create(
+                    self.app.client_manager.get_account(),
                     container,
                     file_or_path=f,
                     content_length=get_file_size(f)
@@ -62,12 +61,11 @@ class DeleteObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         container = parsed_args.container
 
         for obj in parsed_args.objects:
-            self.app.storage.object_delete(
-                account,
+            self.app.client_manager.storage.object_delete(
+                self.app.client_manager.get_account(),
                 container,
                 obj
             )
@@ -90,11 +88,10 @@ class ShowObject(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         container = parsed_args.container
 
-        data = self.app.storage.object_show(
-            account,
+        data = self.app.client_manager.storage.object_show(
+            self.app.client_manager.get_account(),
             container,
             parsed_args.object
         )
@@ -156,7 +153,6 @@ class SaveObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         container = parsed_args.container
         obj = parsed_args.object
 
@@ -166,8 +162,8 @@ class SaveObject(command.Command):
         size = parsed_args.size
         offset = parsed_args.offset
 
-        meta, stream = self.app.storage.object_fetch(
-            account,
+        meta, stream = self.app.client_manager.storage.object_fetch(
+            self.app.client_manager.get_account(),
             container,
             obj,
             size=size,
@@ -218,11 +214,10 @@ class ListObject(lister.Lister):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         container = parsed_args.container
 
-        resp = self.app.storage.object_list(
-            account,
+        resp = self.app.client_manager.storage.object_list(
+            self.app.client_manager.get_account(),
             container,
             limit=parsed_args.limit,
             marker=parsed_args.marker,

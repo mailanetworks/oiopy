@@ -3,47 +3,15 @@
 import sys
 import logging
 
-import pkg_resources
 from cliff import app
-from cliff import commandmanager
 
 import oiopy
 from oiopy.object_storage import ObjectStorageAPI
 from oiopy.directory import DirectoryAPI
 from oiopy import utils
 from oiopy.http import requests
-
-
-class CommandManager(commandmanager.CommandManager):
-    def __init__(self, namespace, convert_underscores=True):
-        self.group_list = []
-        super(CommandManager, self).__init__(namespace, convert_underscores)
-
-        self.client_manager = None
-
-    def load_commands(self, namespace):
-        self.group_list.append(namespace)
-        return super(CommandManager, self).load_commands(namespace)
-
-    def add_command_group(self, group=None):
-        if group:
-            self.load_commands(group)
-
-    def get_command_groups(self):
-        return self.group_list
-
-    def get_command_names(self, group=None):
-        group_list = []
-        if group is not None:
-            for ep in pkg_resources.iter_entry_points(group):
-                cmd_name = (
-                    ep.name.replace('_', ' ')
-                    if self.convert_underscores
-                    else ep.name
-                )
-                group_list.append(cmd_name)
-            return group_list
-        return self.commands.keys()
+from oiopy.cli.commandmanager import CommandManager
+from oiopy.cli import clientmanager
 
 
 class OpenIOShell(app.App):
@@ -55,9 +23,8 @@ class OpenIOShell(app.App):
             version=oiopy.__version__,
             command_manager=CommandManager('oiopy.cli'),
             deferred_help=True)
-        self.storage = None
-        self.directory = None
-        self.requests_session = None
+        self.api_version = {}
+        self.client_manager = None
 
     def configure_logging(self):
         super(OpenIOShell, self).configure_logging()
@@ -71,7 +38,6 @@ class OpenIOShell(app.App):
             root_logger.setLevel(logging.INFO)
         elif self.options.verbose_level >= 3:
             root_logger.setLevel(logging.DEBUG)
-
 
         requests_log = logging.getLogger('requests')
 
@@ -121,29 +87,29 @@ class OpenIOShell(app.App):
             help='Proxyd URL (Env: OIO_PROXYD_URL)'
         )
 
-        return parser
+        return clientmanager.build_plugin_option_parser(parser)
 
     def initialize_app(self, argv):
         super(OpenIOShell, self).initialize_app(argv)
 
-        self.command_manager.add_command_group('openio.storage')
-        self.command_manager.add_command_group('openio.directory')
+        for module in clientmanager.PLUGIN_MODULES:
+            api = module.API_NAME
+            cmd_group = 'openio.' + api.replace('-', '_')
+            self.command_manager.add_command_group(cmd_group)
+            self.log.debug(
+                '%s API: cmd group %s' % (api, cmd_group)
+            )
+        self.command_manager.add_command_group('openio.common')
+        self.command_manager.add_command_group('openio.ext')
 
-        self.ns = self.options.ns
-        self.account_name = self.options.account_name
-        self.proxyd_url = self.options.proxyd_url
+        options = {
+            'namespace': self.options.ns,
+            'account_name': self.options.account_name,
+            'proxyd_url': self.options.proxyd_url
+        }
 
         self.print_help_if_requested()
-
-        self.requests_session = requests.Session()
-        if not self.ns:
-            raise RuntimeError('namespace not specified')
-        if not self.proxyd_url:
-            raise RuntimeError('Proxyd URL not specified')
-        self.storage = ObjectStorageAPI(self.ns, self.proxyd_url,
-                                        session=self.requests_session)
-        self.directory = DirectoryAPI(self.ns, self.proxyd_url,
-                                      session=self.requests_session)
+        self.client_manager = clientmanager.ClientManager(options)
 
     def prepare_to_run_command(self, cmd):
         self.log.info(

@@ -15,6 +15,10 @@
 from eventlet import Timeout
 
 
+class CommandError(Exception):
+    pass
+
+
 class OioException(Exception):
     pass
 
