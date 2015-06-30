@@ -1,5 +1,6 @@
 import logging
 from oiopy import utils
+from oiopy.directory import DirectoryAPI
 
 LOG = logging.getLogger(__name__)
 
@@ -8,8 +9,9 @@ API_NAME = 'directory'
 def make_client(instance):
     endpoint = instance.get_endpoint('directory')
     client = DirectoryAPI(
-        session=session.instance,
-        endpoint=endpoint
+        session=instance.session,
+        endpoint=endpoint,
+        namespace=instance.namespace
     )
     return client
 

@@ -13,8 +13,8 @@ class ShowReference(lister.Lister):
         return parser
 
     def take_action(self, parsed_args):
-        data = self.app.directory.get(
-            account=self.app.account_name,
+        data = self.app.client_manager.directory.get(
+            self.app.client_manager.get_account(),
             reference=parsed_args.reference
         )
         columns = ('Type', 'Host', 'Args', 'Seq')
@@ -36,11 +36,9 @@ class CreateReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
-
         for reference in parsed_args.references:
-            self.app.directory.create(
-                account,
+            self.app.client_manager.directory.create(
+                self.app.client_manager.get_account(),
                 reference=reference
             )
 
@@ -58,11 +56,9 @@ class DeleteReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
-
         for reference in parsed_args.references:
-            self.app.directory.delete(
-                account,
+            self.app.client_manager.directory.delete(
+                self.app.client_manager.get_account(),
                 reference=reference
             )
 
@@ -84,12 +80,11 @@ class LinkReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
 
-        self.app.directory.link(
-            account,
+        self.app.client_manager.directory.link(
+            self.app.client_manager.get_account(),
             reference,
             srv_type
         )
@@ -112,12 +107,11 @@ class UnlinkReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
         
-        self.app.directory.unlink(
-            account,
+        self.app.client_manager.directory.unlink(
+            self.app.client_manager.get_account(),
             reference,
             srv_type
         )
@@ -140,12 +134,11 @@ class PollReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
         
-        self.app.directory.renew(
-            account,
+        self.app.client_manager.directory.renew(
+            self.app.client_manager.get_account(),
             reference,
             srv_type
         )
@@ -168,12 +161,11 @@ class ForceReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        account = self.app.account_name
         reference = parsed_args.reference
         service = parsed_args.service
         
-        self.app.directory.force(
-            account,
+        self.app.client_manager.directory.force(
+            self.app.client_manager.get_account(),
             reference,
             service
         )
