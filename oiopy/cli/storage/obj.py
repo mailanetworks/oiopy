@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 
 from cliff import command
@@ -10,6 +11,8 @@ from oiopy.cli.utils import KeyValueAction
 
 class CreateObject(command.Command):
     """Upload object"""
+
+    log = logging.getLogger(__name__ + '.CreateObject')
 
     def get_parser(self, prog_name):
         parser = super(CreateObject, self).get_parser(prog_name)
@@ -27,6 +30,8 @@ class CreateObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         container = parsed_args.container
 
         def get_file_size(f):
@@ -49,6 +54,8 @@ class CreateObject(command.Command):
 class DeleteObject(command.Command):
     """Delete object from container"""
 
+    log = logging.getLogger(__name__ + '.DeleteObject')
+
     def get_parser(self, prog_name):
         parser = super(DeleteObject, self).get_parser(prog_name)
         parser.add_argument(
@@ -65,6 +72,8 @@ class DeleteObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         container = parsed_args.container
 
         for obj in parsed_args.objects:
@@ -77,6 +86,8 @@ class DeleteObject(command.Command):
 
 class ShowObject(show.ShowOne):
     """Show object"""
+
+    log = logging.getLogger(__name__ + '.ShowObject')
 
     def get_parser(self, prog_name):
         parser = super(ShowObject, self).get_parser(prog_name)
@@ -93,6 +104,8 @@ class ShowObject(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         container = parsed_args.container
 
         data = self.app.client_manager.storage.object_show(
@@ -105,6 +118,8 @@ class ShowObject(show.ShowOne):
 
 class SetObject(command.Command):
     """Set object"""
+
+    log = logging.getLogger(__name__ + '.SetObject')
 
     def get_parser(self, prog_name):
         parser = super(SetObject, self).get_parser(prog_name)
@@ -122,11 +137,13 @@ class SetObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        self.log.debug('take_action(%s)', parsed_args)
 
 
 class SaveObject(command.Command):
     """Save object locally"""
+
+    log = logging.getLogger(__name__ + '.SaveObject')
 
     def get_parser(self, prog_name):
         parser = super(SaveObject, self).get_parser(prog_name)
@@ -160,6 +177,8 @@ class SaveObject(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         container = parsed_args.container
         obj = parsed_args.object
 
@@ -186,6 +205,8 @@ class SaveObject(command.Command):
 
 class ListObject(lister.Lister):
     """List objects in container"""
+
+    log = logging.getLogger(__name__ + '.ListObject')
 
     def get_parser(self, prog_name):
         parser = super(ListObject, self).get_parser(prog_name)
@@ -222,6 +243,8 @@ class ListObject(lister.Lister):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         container = parsed_args.container
 
         resp = self.app.client_manager.storage.object_list(

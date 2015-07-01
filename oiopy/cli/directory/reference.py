@@ -1,9 +1,14 @@
+import logging
+
 from cliff import command
 from cliff import lister
 
 
 class ShowReference(lister.Lister):
     """Show reference"""
+
+    log = logging.getLogger(__name__ + '.ShowReference')
+
     def get_parser(self, prog_name):
         parser = super(ShowReference, self).get_parser(prog_name)
         parser.add_argument(
@@ -14,6 +19,8 @@ class ShowReference(lister.Lister):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         data = self.app.client_manager.directory.get(
             self.app.client_manager.get_account(),
             reference=parsed_args.reference
@@ -27,6 +34,8 @@ class ShowReference(lister.Lister):
 class CreateReference(command.Command):
     """Create reference"""
 
+    log = logging.getLogger(__name__ + '.CreateReference')
+
     def get_parser(self, prog_name):
         parser = super(CreateReference, self).get_parser(prog_name)
         parser.add_argument(
@@ -38,6 +47,8 @@ class CreateReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         for reference in parsed_args.references:
             self.app.client_manager.directory.create(
                 self.app.client_manager.get_account(),
@@ -47,6 +58,8 @@ class CreateReference(command.Command):
 
 class DeleteReference(command.Command):
     """Delete reference"""
+
+    log = logging.getLogger(__name__ + '.DeleteReference')
 
     def get_parser(self, prog_name):
         parser = super(DeleteReference, self).get_parser(prog_name)
@@ -59,6 +72,8 @@ class DeleteReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         for reference in parsed_args.references:
             self.app.client_manager.directory.delete(
                 self.app.client_manager.get_account(),
@@ -68,6 +83,8 @@ class DeleteReference(command.Command):
 
 class LinkReference(command.Command):
     """Link services to reference"""
+
+    log = logging.getLogger(__name__ + '.LinkReference')
 
     def get_parser(self, prog_name):
         parser = super(LinkReference, self).get_parser(prog_name)
@@ -84,6 +101,8 @@ class LinkReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
 
@@ -96,6 +115,8 @@ class LinkReference(command.Command):
 
 class UnlinkReference(command.Command):
     """Unlink services from reference"""
+
+    log = logging.getLogger(__name__ + '.UnlinkReference')
 
     def get_parser(self, prog_name):
         parser = super(UnlinkReference, self).get_parser(prog_name)
@@ -112,6 +133,8 @@ class UnlinkReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
 
@@ -124,6 +147,8 @@ class UnlinkReference(command.Command):
 
 class PollReference(command.Command):
     """Poll services for reference"""
+
+    log = logging.getLogger(__name__ + '.PollReference')
 
     def get_parser(self, prog_name):
         parser = super(PollReference, self).get_parser(prog_name)
@@ -153,6 +178,8 @@ class PollReference(command.Command):
 class ForceReference(command.Command):
     """Force link a service to reference"""
 
+    log = logging.getLogger(__name__ + '.ForceReference')
+
     def get_parser(self, prog_name):
         parser = super(ForceReference, self).get_parser(prog_name)
         parser.add_argument(
@@ -168,6 +195,8 @@ class ForceReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         reference = parsed_args.reference
         service = parsed_args.service
 
@@ -181,6 +210,8 @@ class ForceReference(command.Command):
 class SetReference(command.Command):
     """Set reference properties"""
 
+    log = logging.getLogger(__name__ + '.SetReference')
+
     def get_parser(self, prog_name):
         parser = super(SetReference, self).get_parser(prog_name)
         parser.add_argument(
@@ -191,4 +222,4 @@ class SetReference(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        pass
+        self.log.debug('take_action(%s)', parsed_args)
