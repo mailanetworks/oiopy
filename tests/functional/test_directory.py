@@ -94,12 +94,18 @@ class TestDirectoryFunctional(testtools.TestCase):
     def test_properties(self):
         self.directory.set_properties(self.account, self.reference_name,
                                       {'data': 'something'})
-        props = self.directory.get_properties(self.account, self.reference_name)
+        props = self.directory.get_properties(
+            self.account,
+            self.reference_name
+        )
         self.assertTrue(props)
         self.assertEqual('something', props.get('data'))
 
         self.directory.delete_properties(self.account, self.reference_name,
                                          ['data'])
-        props = self.directory.get_properties(self.account, self.reference_name,
-                                              ['data'])
+        props = self.directory.get_properties(
+            self.account,
+            self.reference_name,
+            ['data']
+        )
         self.assertFalse(len(props))

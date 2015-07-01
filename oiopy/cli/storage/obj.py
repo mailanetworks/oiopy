@@ -2,8 +2,11 @@ import io
 import os
 
 from cliff import command
-from cliff import show
 from cliff import lister
+from cliff import show
+
+from oiopy.cli.utils import KeyValueAction
+
 
 class CreateObject(command.Command):
     """Upload object"""
@@ -42,6 +45,7 @@ class CreateObject(command.Command):
                     content_length=get_file_size(f)
                 )
 
+
 class DeleteObject(command.Command):
     """Delete object from container"""
 
@@ -70,6 +74,7 @@ class DeleteObject(command.Command):
                 obj
             )
 
+
 class ShowObject(show.ShowOne):
     """Show object"""
 
@@ -97,6 +102,7 @@ class ShowObject(show.ShowOne):
         )
         return zip(*sorted(data.iteritems()))
 
+
 class SetObject(command.Command):
     """Set object"""
 
@@ -117,6 +123,7 @@ class SetObject(command.Command):
 
     def take_action(self, parsed_args):
         pass
+
 
 class SaveObject(command.Command):
     """Save object locally"""
@@ -156,7 +163,7 @@ class SaveObject(command.Command):
         container = parsed_args.container
         obj = parsed_args.object
 
-        file = parsed_args.file        
+        file = parsed_args.file
         if not file:
             file = obj
         size = parsed_args.size
@@ -175,6 +182,7 @@ class SaveObject(command.Command):
         with open(file, 'wb') as f:
             for chunk in stream:
                 f.write(chunk)
+
 
 class ListObject(lister.Lister):
     """List objects in container"""
@@ -229,4 +237,3 @@ class ListObject(lister.Lister):
         results = ((obj['name'], obj['size'], obj['hash']) for obj in l)
         columns = ('Name', 'Size', 'Hash')
         return (columns, results)
-

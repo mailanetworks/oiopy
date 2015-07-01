@@ -1,18 +1,19 @@
-import unittest
-import random
-import json
-from cStringIO import StringIO
 from contextlib import contextmanager
-
+from cStringIO import StringIO
+import json
 from mock import MagicMock as Mock
+import random
+import unittest
+
 
 import oiopy
-from oiopy import utils
-from oiopy import fakes
 from oiopy import exceptions
-from oiopy.object_storage import container_headers, object_headers
+from oiopy import fakes
+from oiopy import utils
+from oiopy.object_storage import container_headers
 from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
+from oiopy.object_storage import object_headers
 from oiopy.object_storage import _sort_chunks
 
 
@@ -117,12 +118,13 @@ class ObjectStorageTest(unittest.TestCase):
         resp.headers = {
             container_headers["size"]: cont_size
         }
-        api._request = Mock(return_value=(resp, None))
+        api._request = Mock(return_value=(resp, {}))
         uri = "%s/%s/action" % (self.uri_base, name)
         info = api.container_show(self.account, name)
         data = json.dumps({'args': None, 'action': 'GetProperties'})
         api._request.assert_called_once_with('POST', uri, data=data,
                                              headers=None)
+        self.assertEqual(info, {})
 
     def test_container_show_not_found(self):
         api = self.api
@@ -186,7 +188,7 @@ class ObjectStorageTest(unittest.TestCase):
         uri = "%s/%s/action" % (self.uri_base, name)
         data = json.dumps({"action": "SetProperties", "args": meta})
         api._request.assert_called_once_with('POST', uri, data=data,
-                                             headers=None)
+                                             params={}, headers=None)
 
     def test_object_show(self):
         api = self.api
@@ -208,6 +210,7 @@ class ObjectStorageTest(unittest.TestCase):
         data = json.dumps({"action": "GetProperties", "args": None})
         api._request.assert_called_once_with('POST', uri, data=data,
                                              headers=None)
+        self.assertIsNotNone(obj)
 
     def test_object_create_no_data(self):
         api = self.api
@@ -317,26 +320,21 @@ class ObjectStorageTest(unittest.TestCase):
         chunks = _sort_chunks(raw_chunks, True)
         sorted_chunks = {
             0: {
-                "0":
-                    {"url": "http://1.2.3.4:6000/AAAA", "pos": "0.0",
-                     "size": 32},
-                "1":
-                    {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1",
-                     "size": 32},
-                "p0":
-                    {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0",
-                     "size": 32}
+                "0": {
+                    "url": "http://1.2.3.4:6000/AAAA", "pos": "0.0",
+                    "size": 32},
+                "1": {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1",
+                      "size": 32},
+                "p0": {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0",
+                       "size": 32}
             },
             1: {
-                "0":
-                    {"url": "http://1.2.3.4:6000/DDDD", "pos": "1.0",
-                     "size": 32},
-                "1":
-                    {"url": "http://1.2.3.4:6000/EEEE", "pos": "1.1",
-                     "size": 32},
-                "p0":
-                    {"url": "http://1.2.3.4:6000/FFFF", "pos": "1.p0",
-                     "size": 32}
+                "0": {"url": "http://1.2.3.4:6000/DDDD", "pos": "1.0",
+                      "size": 32},
+                "1": {"url": "http://1.2.3.4:6000/EEEE", "pos": "1.1",
+                      "size": 32},
+                "p0": {"url": "http://1.2.3.4:6000/FFFF", "pos": "1.p0",
+                       "size": 32}
             }}
         self.assertEqual(chunks, sorted_chunks)
 
@@ -416,11 +414,3 @@ class ObjectStorageTest(unittest.TestCase):
         with set_http_connect(200):
             self.assertRaises(exceptions.ClientReadTimeout, api._put_stream,
                               name, src, {"content_length": 1}, chunks)
-
-
-
-
-
-
-
-

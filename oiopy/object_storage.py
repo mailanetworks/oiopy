@@ -12,20 +12,20 @@
 # License along with this library.
 
 
-import hashlib
 from cStringIO import StringIO
-from urlparse import urlparse
-import json
 from functools import wraps
-
+import hashlib
+import json
 import os
+from urlparse import urlparse
+
 from eventlet import Timeout
 from eventlet.greenpool import GreenPile
 from eventlet.queue import Queue
 
 from oiopy.api import API
 from oiopy.directory import DirectoryAPI
-from oiopy import exceptions
+from oiopy import exceptions as exc
 from oiopy import utils
 from oiopy.exceptions import ConnectionTimeout, ChunkReadTimeout, \
     ChunkWriteTimeout
@@ -65,9 +65,9 @@ def handle_container_not_found(fnc):
     def _wrapped(self, account, container, *args, **kwargs):
         try:
             return fnc(self, account, container, *args, **kwargs)
-        except exceptions.NotFound as e:
+        except exc.NotFound as e:
             e.message = "Container '%s' does not exist." % container
-            raise exceptions.NoSuchContainer(e)
+            raise exc.NoSuchContainer(e)
 
     return _wrapped
 
@@ -77,9 +77,9 @@ def handle_object_not_found(fnc):
     def _wrapped(self, account, container, obj, *args, **kwargs):
         try:
             return fnc(self, account, container, obj, *args, **kwargs)
-        except exceptions.NotFound as e:
+        except exc.NotFound as e:
             e.message = "Object '%s' does not exist." % obj
-            raise exceptions.NoSuchObject(e)
+            raise exc.NoSuchObject(e)
 
     return _wrapped
 
@@ -125,7 +125,11 @@ class ObjectStorageAPI(API):
     def __init__(self, namespace, endpoint, **kwargs):
         endpoint_v2 = '/'.join([endpoint.rstrip('/'), 'v2.0'])
         super(ObjectStorageAPI, self).__init__(endpoint=endpoint_v2, **kwargs)
-        self.directory = DirectoryAPI(namespace, endpoint, session=self.session)
+        self.directory = DirectoryAPI(
+            namespace,
+            endpoint,
+            session=self.session
+        )
         self.namespace = namespace
 
     def account_create(self, account, headers=None):
@@ -156,7 +160,7 @@ class ObjectStorageAPI(API):
     def container_create(self, account, container, headers=None):
         try:
             self.directory.link(account, container, "meta2", headers=headers)
-        except exceptions.NotFound:
+        except exc.NotFound:
             self.directory.create(account, container, headers=headers)
             self.directory.link(account, container, "meta2", headers=headers)
 
@@ -164,15 +168,15 @@ class ObjectStorageAPI(API):
 
         resp, resp_body = self._request('PUT', uri, headers=headers)
         if resp.status_code not in (204, 201):
-            raise exceptions.from_response(resp, resp_body)
+            raise exc.from_response(resp, resp_body)
 
     @handle_container_not_found
     def container_delete(self, account, container, headers=None):
         uri = self._make_uri(account, container)
         try:
             resp, resp_body = self._request('DELETE', uri, headers=headers)
-        except exceptions.Conflict as e:
-            raise exceptions.ContainerNotEmpty(e)
+        except exc.Conflict as e:
+            raise exc.ContainerNotEmpty(e)
 
         self.directory.unlink(account, container, "meta2", headers=headers)
 
@@ -214,16 +218,16 @@ class ObjectStorageAPI(API):
     @handle_container_not_found
     def object_create(self, account, container, file_or_path=None, data=None,
                       etag=None, obj_name=None, content_type=None,
-                      content_encoding=None, content_length=None, metadata=None,
-                      headers=None):
+                      content_encoding=None, content_length=None,
+                      metadata=None, headers=None):
         if (data, file_or_path) == (None, None):
-            raise exceptions.MissingData()
+            raise exc.MissingData()
         src = data if data is not None else file_or_path
         if src is file_or_path:
             if isinstance(file_or_path, basestring):
                 if not os.path.exists(file_or_path):
-                    raise exceptions.FileNotFound("File '%s' not found." %
-                                                  file_or_path)
+                    raise exc.FileNotFound("File '%s' not found." %
+                                           file_or_path)
                 file_name = os.path.basename(file_or_path)
             else:
                 try:
@@ -232,14 +236,15 @@ class ObjectStorageAPI(API):
                     file_name = None
             obj_name = obj_name or file_name
         if not obj_name:
-            raise exceptions.MissingName("No name for the object has been "
-                                         "specified")
+            raise exc.MissingName(
+                "No name for the object has been specified"
+            )
 
         if isinstance(data, basestring):
             content_length = len(data)
 
         if content_length is None:
-            raise exceptions.MissingContentLength()
+            raise exc.MissingContentLength()
 
         sysmeta = {'content_type': content_type,
                    'content_encoding': content_encoding,
@@ -338,8 +343,9 @@ class ObjectStorageAPI(API):
             instance_info = resp_body[0]
             return 'http://%s/' % instance_info['addr']
         else:
-            raise exceptions.ClientException("could not find account instance "
-                                             "url")
+            raise exc.ClientException(
+                "could not find account instance url"
+            )
 
     def _account_request(self, method, uri, **kwargs):
         account_url = self._get_account_url()
@@ -357,7 +363,7 @@ class ObjectStorageAPI(API):
 
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
         if rain_security:
-            raise exceptions.OioException('RAIN Security not supported.')
+            raise exc.OioException('RAIN Security not supported.')
 
         chunks = _sort_chunks(raw_chunks, rain_security)
         final_chunks, bytes_transferred, content_checksum = self._put_stream(
@@ -395,7 +401,7 @@ class ObjectStorageAPI(API):
                                         headers)
                     conn.chunk = chunk
                 return conn
-            except (Exception, Timeout) as e:
+            except (Exception, Timeout):
                 pass
 
         def _send_data(conn):
@@ -422,7 +428,7 @@ class ObjectStorageAPI(API):
             min_conns = 1
 
             if len(conns) < min_conns:
-                raise exceptions.OioException("RAWX connection failure")
+                raise exc.OioException("RAWX connection failure")
 
             bytes_transferred = 0
             total_size = current_chunks[0]["size"]
@@ -457,7 +463,7 @@ class ObjectStorageAPI(API):
                                 conns.remove(conn)
 
                         if len(conns) < min_conns:
-                            raise exceptions.OioException("RAWX write failure")
+                            raise exc.OioException("RAWX write failure")
 
                     for conn in conns:
                         if conn.queue.unfinished_tasks:
@@ -466,10 +472,11 @@ class ObjectStorageAPI(API):
                 conns = [conn for conn in conns if not conn.failed]
 
             except ChunkReadTimeout:
-                raise exceptions.ClientReadTimeout()
+                raise exc.ClientReadTimeout()
             except (Exception, Timeout):
-                raise exceptions.OioException("Exception during chunk "
-                                              "write.")
+                raise exc.OioException(
+                    "Exception during chunk write."
+                )
 
             final_chunks = []
             for conn in conns:
@@ -479,7 +486,7 @@ class ObjectStorageAPI(API):
                     final_chunks.append(conn.chunk)
                 conn.close()
             if len(final_chunks) < min_conns:
-                raise exceptions.OioException("RAWX write failure")
+                raise exc.OioException("RAWX write failure")
 
             checksum = chunk_checksum.hexdigest()
             for chunk in final_chunks:
@@ -498,7 +505,7 @@ class ObjectStorageAPI(API):
         if size is None:
             size = int(meta["length"])
         if rain_security:
-            raise exceptions.OioException("RAIN not supported")
+            raise exc.OioException("RAIN not supported")
         else:
             for pos in range(len(chunks)):
                 chunk_size = int(chunks[pos][0]["size"])
@@ -517,7 +524,7 @@ class ObjectStorageAPI(API):
                     handler = ChunkDownloadHandler(chunks[pos], _size, _offset)
                     stream = handler.get_stream()
                     if not stream:
-                        raise exceptions.OioException("Error while downloading")
+                        raise exc.OioException("Error while downloading")
                     for s in stream:
                         total_bytes += len(s)
                         yield s
@@ -568,7 +575,7 @@ class ChunkDownloadHandler(object):
                 source = conn.getresponse(True)
                 source.conn = conn
 
-            except Exception as e:
+            except Exception:
                 self.failed_chunks.append(chunk)
                 continue
             if source.status not in (200, 206):

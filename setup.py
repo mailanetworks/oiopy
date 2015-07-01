@@ -1,7 +1,7 @@
 import setuptools
 
 try:
-    import multiprocessing
+    import multiprocessing  # noqa
 except ImportError:
     pass
 

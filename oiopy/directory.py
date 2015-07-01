@@ -108,7 +108,8 @@ class DirectoryAPI(API):
         resp, resp_body = self._request('GET', uri, headers=headers)
         return resp_body
 
-    def get_properties(self, account, reference, properties=None, headers=None):
+    def get_properties(self, account, reference, properties=None,
+                       headers=None):
         """
         Get properties for a reference.
         """
@@ -132,4 +133,3 @@ class DirectoryAPI(API):
         uri = self._make_uri(account, reference)
         resp, resp_body = self._action(uri, 'DeleteProperties', properties,
                                        headers=headers)
-

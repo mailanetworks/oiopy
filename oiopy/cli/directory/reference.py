@@ -1,6 +1,7 @@
 from cliff import command
 from cliff import lister
 
+
 class ShowReference(lister.Lister):
     """Show reference"""
     def get_parser(self, prog_name):
@@ -19,8 +20,9 @@ class ShowReference(lister.Lister):
         )
         columns = ('Type', 'Host', 'Args', 'Seq')
         results = ((d['type'], d['host'], d['args'], d['seq'])
-                    for d in data['srv'])
+                   for d in data['srv'])
         return columns, results
+
 
 class CreateReference(command.Command):
     """Create reference"""
@@ -42,6 +44,7 @@ class CreateReference(command.Command):
                 reference=reference
             )
 
+
 class DeleteReference(command.Command):
     """Delete reference"""
 
@@ -61,6 +64,7 @@ class DeleteReference(command.Command):
                 self.app.client_manager.get_account(),
                 reference=reference
             )
+
 
 class LinkReference(command.Command):
     """Link services to reference"""
@@ -89,6 +93,7 @@ class LinkReference(command.Command):
             srv_type
         )
 
+
 class UnlinkReference(command.Command):
     """Unlink services from reference"""
 
@@ -109,12 +114,13 @@ class UnlinkReference(command.Command):
     def take_action(self, parsed_args):
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
-        
+
         self.app.client_manager.directory.unlink(
             self.app.client_manager.get_account(),
             reference,
             srv_type
         )
+
 
 class PollReference(command.Command):
     """Poll services for reference"""
@@ -136,12 +142,13 @@ class PollReference(command.Command):
     def take_action(self, parsed_args):
         reference = parsed_args.reference
         srv_type = parsed_args.srv_type
-        
+
         self.app.client_manager.directory.renew(
             self.app.client_manager.get_account(),
             reference,
             srv_type
         )
+
 
 class ForceReference(command.Command):
     """Force link a service to reference"""
@@ -163,12 +170,13 @@ class ForceReference(command.Command):
     def take_action(self, parsed_args):
         reference = parsed_args.reference
         service = parsed_args.service
-        
+
         self.app.client_manager.directory.force(
             self.app.client_manager.get_account(),
             reference,
             service
         )
+
 
 class SetReference(command.Command):
     """Set reference properties"""
