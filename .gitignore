@@ -1,8 +1,10 @@
 *.pyc
 *.pyo
+*~
+*.sw?
 dist
 build
 cover
 *.egg
 *.egg-info
-env/
+.tox
