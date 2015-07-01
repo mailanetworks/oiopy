@@ -1,0 +1,6 @@
+flake8
+coverage
+nose
+nosehtmloutput
+mock>=1.0
+testtools
