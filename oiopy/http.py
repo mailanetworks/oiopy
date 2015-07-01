@@ -27,4 +27,3 @@ def http_connect(host, method, path, headers=None):
             conn.putheader(header, str(value))
     conn.endheaders()
     return conn
-

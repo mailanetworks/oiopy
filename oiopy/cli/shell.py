@@ -6,10 +6,7 @@ import logging
 from cliff import app
 
 import oiopy
-from oiopy.object_storage import ObjectStorageAPI
-from oiopy.directory import DirectoryAPI
 from oiopy import utils
-from oiopy.http import requests
 from oiopy.cli.commandmanager import CommandManager
 from oiopy.cli import clientmanager
 
@@ -45,7 +42,6 @@ class OpenIOShell(app.App):
             requests_log.setLevel(logging.DEBUG)
         else:
             requests_log.setLevel(logging.ERROR)
-
 
         cliff_log = logging.getLogger('cliff')
         cliff_log.setLevel(logging.ERROR)
@@ -121,7 +117,6 @@ class OpenIOShell(app.App):
 
     def clean_up(self, cmd, result, err):
         self.log.debug('clean up %s: %s', cmd.__class__.__name__, err or '')
-
 
 
 def main(argv=sys.argv[1:]):

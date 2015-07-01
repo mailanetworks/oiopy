@@ -8,6 +8,7 @@ from oiopy import exceptions
 LOG = logging.getLogger(__name__)
 PLUGIN_MODULES = []
 
+
 def validate_options(options):
     msg = ''
     if not options.get('namespace', None):
@@ -59,6 +60,7 @@ class ClientManager(object):
             raise exceptions.CommandError('Missing parameter: \n%s' % msg)
         return account_name
 
+
 def get_plugin_modules(group):
     modules_list = []
     for entry_point in pkg_resources.iter_entry_points(group):
@@ -71,13 +73,14 @@ def get_plugin_modules(group):
         client_cache = ClientCache(
             getattr(module, 'make_client', None)
         )
-        
+
         setattr(
             ClientManager,
             module.API_NAME,
             client_cache
         )
     return modules_list
+
 
 def build_plugin_option_parser(parser):
     for module in PLUGIN_MODULES:

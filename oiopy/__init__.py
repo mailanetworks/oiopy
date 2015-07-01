@@ -1,3 +1,4 @@
+
 __all__ = ['__version__']
 
 import pbr.version

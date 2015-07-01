@@ -5,7 +5,6 @@ from cliff import lister
 from oiopy.cli.utils import KeyValueAction
 
 
-
 class CreateContainer(command.Command):
     """Create container"""
 
@@ -25,6 +24,7 @@ class CreateContainer(command.Command):
                 self.app.client_manager.get_account(),
                 container
             )
+
 
 class SetContainer(command.Command):
     """Set container"""

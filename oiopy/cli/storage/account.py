@@ -1,7 +1,6 @@
-from cliff import show
 from cliff import command
+from cliff import show
 from oiopy.cli.utils import KeyValueAction
-
 
 
 class ShowAccount(show.ShowOne):
@@ -22,6 +21,7 @@ class ShowAccount(show.ShowOne):
         )
         return zip(*sorted(data.iteritems()))
 
+
 class CreateAccount(command.Command):
     """Create account"""
 
@@ -40,6 +40,8 @@ class CreateAccount(command.Command):
             data = self.app.client_manager.storage.account_create(
                 account=account
             )
+            self.logger.debug('account create result: %s' % data)
+
 
 class SetAccount(command.Command):
     """Set account"""
@@ -74,4 +76,3 @@ class SetAccount(command.Command):
             metadata=parsed_args.property,
             to_delete=parsed_args.delete_property
         )
-

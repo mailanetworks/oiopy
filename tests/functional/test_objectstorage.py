@@ -50,7 +50,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
             try:
                 self.storage.object_delete(self.account, self.container_name,
                                            obj)
-            except Exception as e:
+            except Exception:
                 pass
 
         for container in [self.container_name,
@@ -58,7 +58,7 @@ class TestObjectStorageFunctional(testtools.TestCase):
                           self.container_name_3]:
             try:
                 self.storage.container_delete(self.account, container)
-            except Exception as e:
+            except Exception:
                 pass
 
     def test_show_container(self):

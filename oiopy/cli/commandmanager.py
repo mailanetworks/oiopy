@@ -1,6 +1,7 @@
 import pkg_resources
 from cliff import commandmanager
 
+
 class CommandManager(commandmanager.CommandManager):
     def __init__(self, namespace, convert_underscores=True):
         self.group_list = []
