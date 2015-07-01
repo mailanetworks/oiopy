@@ -36,7 +36,7 @@ class CreateAccount(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        for account in parsed.args.accounts:
+        for account in parsed_args.accounts:
             data = self.app.client_manager.storage.account_create(
                 account=account
             )
