@@ -186,7 +186,7 @@ class ObjectStorageTest(unittest.TestCase):
         uri = "%s/%s/action" % (self.uri_base, name)
         data = json.dumps({"action": "SetProperties", "args": meta})
         api._request.assert_called_once_with('POST', uri, data=data,
-                                             headers=None)
+                                             params={}, headers=None)
 
     def test_object_show(self):
         api = self.api
