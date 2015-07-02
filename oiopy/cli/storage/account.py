@@ -1,3 +1,5 @@
+import logging
+
 from cliff import command
 from cliff import show
 from oiopy.cli.utils import KeyValueAction
@@ -5,6 +7,8 @@ from oiopy.cli.utils import KeyValueAction
 
 class ShowAccount(show.ShowOne):
     """Show account"""
+
+    log = logging.getLogger(__name__ + '.ShowAccount')
 
     def get_parser(self, prog_name):
         parser = super(ShowAccount, self).get_parser(prog_name)
@@ -16,6 +20,8 @@ class ShowAccount(show.ShowOne):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         data = self.app.client_manager.storage.account_show(
             account=parsed_args.account
         )
@@ -24,6 +30,8 @@ class ShowAccount(show.ShowOne):
 
 class CreateAccount(command.Command):
     """Create account"""
+
+    log = logging.getLogger(__name__ + '.CreateAccount')
 
     def get_parser(self, prog_name):
         parser = super(CreateAccount, self).get_parser(prog_name)
@@ -36,15 +44,19 @@ class CreateAccount(command.Command):
         return parser
 
     def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
         for account in parsed_args.accounts:
             data = self.app.client_manager.storage.account_create(
                 account=account
             )
-            self.logger.debug('account create result: %s' % data)
+            self.log.debug('account create result: %s' % data)
 
 
 class SetAccount(command.Command):
     """Set account"""
+
+    log = logging.getLogger(__name__ + '.SetAccount')
 
     def get_parser(self, prog_name):
         parser = super(SetAccount, self).get_parser(prog_name)
@@ -70,7 +82,8 @@ class SetAccount(command.Command):
         return parser
 
     def take_action(self, parsed_args):
-        print parsed_args.delete_property
+        self.log.debug('take_action(%s)', parsed_args)
+
         self.app.client_manager.storage.account_update(
             account=parsed_args.account,
             metadata=parsed_args.property,
