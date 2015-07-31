@@ -73,13 +73,13 @@ class TestDirectoryFunctional(testtools.TestCase):
         self.directory.link(self.account, self.reference_name_2, "meta2")
         services = self.directory.list_services(self.account,
                                                 self.reference_name_2, "meta2")
-        self.assertTrue(len(services))
+        self.assertTrue(len(services['srv']))
 
     def test_unlink_reference(self):
         self.directory.unlink(self.account, self.reference_name, "meta2")
         services = self.directory.list_services(self.account,
                                                 self.reference_name, "meta2")
-        self.assertFalse(len(services))
+        self.assertFalse(len(services['srv']))
 
     def test_renew_reference(self):
         services = self.directory.renew(self.account, self.reference_name,
@@ -87,7 +87,8 @@ class TestDirectoryFunctional(testtools.TestCase):
         self.assertTrue(len(services))
 
     def test_force_reference(self):
-        services = {'seq': 1, 'type': 'meta2', 'host': '127.0.0.1:7000'}
+        services = {'seq': 2, 'type': 'meta2', 'host': '127.0.0.1:7000',
+                    'args': ''}
         self.directory.force(self.account, self.reference_name, "meta2",
                              services)
 

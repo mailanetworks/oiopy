@@ -15,7 +15,6 @@ import json
 
 from oiopy.api import API
 from oiopy import exceptions
-from oiopy.utils import quote
 
 
 class DirectoryAPI(API):
@@ -24,88 +23,104 @@ class DirectoryAPI(API):
     """
 
     def __init__(self, namespace, endpoint, **kwargs):
-        endpoint_v2 = '/'.join([endpoint.rstrip('/'), 'v2.0'])
-        super(DirectoryAPI, self).__init__(endpoint=endpoint_v2, **kwargs)
+        endpoint_v3 = '/'.join([endpoint.rstrip('/'), 'v3.0'])
+        super(DirectoryAPI, self).__init__(endpoint=endpoint_v3, **kwargs)
         self.namespace = namespace
 
-    def _make_uri(self, account, reference, srv_type=None):
-        account = quote(account, '')
-        reference = quote(reference)
-        uri = "dir/%s/%s/%s" % (self.namespace, account, reference)
-        if srv_type:
-            uri += '/%s' % srv_type
+    def _make_uri(self, action):
+        uri = "%s/%s" % (self.namespace, action)
         return uri
 
-    def _action(self, uri, action, args, headers=None):
-        uri = "%s/action" % uri
-        body = {"action": action, "args": args}
-        data = json.dumps(body)
-        return self._request('POST', uri, data=data, headers=headers)
+    def _make_params(self, account, ref, srv_type=None):
+        params = {'acct': account,
+                  'ref': ref}
+        if srv_type:
+            params.update({'type': srv_type})
+        return params
 
     def has(self, account, reference, headers=None):
         """
         Check if the reference exists.
         """
-        uri = self._make_uri(account, reference)
+        uri = self._make_uri('reference/has')
+        params = self._make_params(account, reference)
         try:
-            resp, resp_body = self._request('HEAD', uri, headers=headers)
+            resp, resp_body = self._request(
+                'GET', uri, params=params, headers=headers)
         except exceptions.NotFound:
             return False
         return True
 
     def get(self, account, reference, headers=None):
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._request('GET', uri, headers=headers)
+        uri = self._make_uri('reference/show')
+        params = self._make_params(account, reference)
+        resp, resp_body = self._request(
+            'GET', uri, params=params, headers=headers)
         return resp_body
 
     def create(self, account, reference, headers=None):
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._request('PUT', uri, headers=headers)
+        uri = self._make_uri('reference/create')
+        params = self._make_params(account, reference)
+        resp, resp_body = self._request(
+            'POST', uri, params=params, headers=headers)
         if resp.status_code in (200, 201):
             return resp_body
         else:
             raise exceptions.from_response(resp, resp_body)
 
     def delete(self, account, reference, headers=None):
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._request('DELETE', uri, headers=headers)
+        uri = self._make_uri('reference/destroy')
+        params = self._make_params(account, reference)
+        resp, resp_body = self._request(
+            'POST', uri, params=params, headers=headers)
 
     def link(self, account, reference, service_type, headers=None):
         """
         Poll and associate a new service to the reference.
         """
-        uri = self._make_uri(account, reference, service_type)
-        resp, resp_body = self._action(uri, 'Link', None, headers=headers)
+        uri = self._make_uri('reference/link')
+        params = self._make_params(account, reference, service_type)
+        resp, resp_body = self._request(
+            'POST', uri, params=params, headers=headers)
         return resp_body
 
     def unlink(self, account, reference, service_type, headers=None):
         """
         Remove an associated service to the reference.
         """
-        uri = self._make_uri(account, reference, service_type)
-        resp, resp_body = self._request('DELETE', uri, headers=headers)
+        uri = self._make_uri('reference/unlink')
+        params = self._make_params(account, reference, service_type)
+        resp, resp_body = self._request(
+            'POST', uri, params=params, headers=headers)
 
     def renew(self, account, reference, service_type, headers=None):
         """
         Re-poll and re-associate a set of services to the reference.
         """
-        uri = self._make_uri(account, reference, service_type)
-        resp, resp_body = self._action(uri, 'Renew', None, headers=headers)
+        uri = self._make_uri('reference/renew')
+        params = self._make_params(account, reference, service_type)
+        resp, resp_body = self._request(
+            'POST', uri, params=params, headers=headers)
         return resp_body
 
     def force(self, account, reference, service_type, services, headers=None):
         """
         Associate the specified services to the reference.
         """
-        uri = self._make_uri(account, reference, service_type)
-        resp, resp_body = self._action(uri, 'Force', services, headers=headers)
+        uri = self._make_uri('reference/force')
+        params = self._make_params(account, reference, service_type)
+        data = json.dumps(services)
+        resp, resp_body = self._request(
+            'POST', uri, data=data, params=params, headers=headers)
 
     def list_services(self, account, reference, service_type, headers=None):
         """
         List the associated services to the reference.
         """
-        uri = self._make_uri(account, reference, service_type)
-        resp, resp_body = self._request('GET', uri, headers=headers)
+        uri = self._make_uri('reference/show')
+        params = self._make_params(account, reference, service_type)
+        resp, resp_body = self._request(
+            'GET', uri, params=params, headers=headers)
         return resp_body
 
     def get_properties(self, account, reference, properties=None,
@@ -113,23 +128,32 @@ class DirectoryAPI(API):
         """
         Get properties for a reference.
         """
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._action(uri, 'GetProperties', properties,
-                                       headers=headers)
+        uri = self._make_uri('reference/get_properties')
+        params = self._make_params(account, reference)
+        data = properties
+        resp, resp_body = self._request(
+            'POST', uri, params=params, data=json.dumps(data),
+            headers=headers)
         return resp_body
 
     def set_properties(self, account, reference, properties, headers=None):
         """
         Set properties for a reference.
         """
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._action(uri, 'SetProperties', properties,
-                                       headers=headers)
+        uri = self._make_uri('reference/set_properties')
+        params = self._make_params(account, reference)
+        data = properties
+        resp, resp_body = self._request(
+            'POST', uri, params=params, data=json.dumps(data),
+            headers=headers)
 
     def delete_properties(self, account, reference, properties, headers=None):
         """
         Delete properties for a reference.
         """
-        uri = self._make_uri(account, reference)
-        resp, resp_body = self._action(uri, 'DeleteProperties', properties,
-                                       headers=headers)
+        uri = self._make_uri('reference/del_properties')
+        params = self._make_params(account, reference)
+        data = properties
+        resp, resp_body = self._request(
+            'POST', uri, params=params, data=json.dumps(data),
+            headers=headers)
