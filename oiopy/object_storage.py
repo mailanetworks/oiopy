@@ -252,15 +252,16 @@ class ObjectStorageAPI(API):
                    'etag': etag}
 
         if src is data:
-            self._object_create(account, container, obj_name, StringIO(data),
-                                sysmeta, headers=headers)
+            return self._object_create(
+                account, container, obj_name, StringIO(data), sysmeta,
+                headers=headers)
         elif hasattr(file_or_path, "read"):
-            self._object_create(account, container, obj_name, src, sysmeta,
-                                headers=headers)
+            return self._object_create(
+                account, container, obj_name, src, sysmeta, headers=headers)
         else:
             with open(file_or_path, "rb") as f:
-                self._object_create(account, container, obj_name, f, sysmeta,
-                                    headers=headers)
+                return self._object_create(
+                    account, container, obj_name, f, sysmeta, headers=headers)
 
     @handle_object_not_found
     def object_delete(self, account, container, obj, headers=None):
@@ -377,6 +378,7 @@ class ObjectStorageAPI(API):
 
         data = json.dumps(final_chunks)
         resp, resp_body = self._request('PUT', uri, data=data, headers=headers)
+        return final_chunks, bytes_transferred, content_checksum
 
     def _put_stream(self, obj_name, src, sysmeta, chunks, headers=None):
         global_checksum = hashlib.md5()
