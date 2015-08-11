@@ -34,6 +34,7 @@ from oiopy.http import http_connect
 
 CONTAINER_METADATA_PREFIX = "x-oio-container-meta-"
 OBJECT_METADATA_PREFIX = "x-oio-content-meta-"
+CHUNK_METADATA_PREFIX = "x-oio-chunk-meta-"
 
 WRITE_CHUNK_SIZE = 65536
 READ_CHUNK_SIZE = 65536
@@ -57,6 +58,18 @@ object_headers = {
     "ctime": "%sctime" % OBJECT_METADATA_PREFIX,
     "hash": "%shash" % OBJECT_METADATA_PREFIX,
     "chunk_method": "%schunk-method" % OBJECT_METADATA_PREFIX
+}
+
+chunk_headers = {
+    "container_id": "%scontainer-id" % CHUNK_METADATA_PREFIX,
+    "chunk_id": "%schunk-id" % CHUNK_METADATA_PREFIX,
+    "chunk_hash": "%schunk-hash" % CHUNK_METADATA_PREFIX,
+    "chunk_size": "%schunk-size" % CHUNK_METADATA_PREFIX,
+    "chunk_pos": "%schunk-pos" % CHUNK_METADATA_PREFIX,
+    "content_size": "%scontent-size" % CHUNK_METADATA_PREFIX,
+    "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
+    "content_chunksnb": "%scontent-chunksnb" % CHUNK_METADATA_PREFIX,
+    "content_hash": "%scontent-hash" % CHUNK_METADATA_PREFIX
 }
 
 
@@ -390,7 +403,8 @@ class ObjectStorageAPI(API):
 
         chunks = _sort_chunks(raw_chunks, rain_security)
         final_chunks, bytes_transferred, content_checksum = self._put_stream(
-            obj_name, src, sysmeta, chunks, headers=headers)
+            account, container, obj_name, src, sysmeta, chunks,
+            headers=headers)
 
         sysmeta['etag'] = content_checksum
 
@@ -404,7 +418,8 @@ class ObjectStorageAPI(API):
             'POST', uri, data=data, params=params, headers=headers)
         return final_chunks, bytes_transferred, content_checksum
 
-    def _put_stream(self, obj_name, src, sysmeta, chunks, headers=None):
+    def _put_stream(self, account, container, obj_name, src, sysmeta, chunks,
+                    headers=None):
         global_checksum = hashlib.md5()
         total_bytes_transferred = 0
         content_chunks = []
@@ -414,17 +429,18 @@ class ObjectStorageAPI(API):
             parsed = urlparse(raw_url)
             try:
                 chunk_path = parsed.path.split('/')[-1]
-                headers = {}
-                headers["transfer-encoding"] = "chunked"
-                headers["content_path"] = utils.quote(obj_name)
-                headers["content_size"] = sysmeta['content_length']
-                headers["content_chunksnb"] = len(chunks)
-                headers["chunk_position"] = chunk["pos"]
-                headers["chunk_id"] = chunk_path
-
+                hdrs = {}
+                hdrs["transfer-encoding"] = "chunked"
+                hdrs[chunk_headers["content_path"]] = utils.quote(obj_name)
+                hdrs[chunk_headers["content_size"]] = sysmeta['content_length']
+                hdrs[chunk_headers["content_chunksnb"]] = len(chunks)
+                hdrs[chunk_headers["container_id"]] = \
+                    utils.name2cid(account, container)
+                hdrs[chunk_headers["chunk_pos"]] = chunk["pos"]
+                hdrs[chunk_headers["chunk_id"]] = chunk_path
                 with ConnectionTimeout(CONNECTION_TIMEOUT):
-                    conn = http_connect(parsed.netloc, 'PUT', parsed.path,
-                                        headers)
+                    conn = http_connect(
+                        parsed.netloc, 'PUT', parsed.path, hdrs)
                     conn.chunk = chunk
                 return conn
             except (Exception, Timeout):

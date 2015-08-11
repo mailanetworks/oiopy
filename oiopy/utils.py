@@ -12,6 +12,7 @@
 # License along with this library.
 
 
+import hashlib
 import random
 import string
 from urllib import quote as _quote
@@ -56,3 +57,10 @@ def env(*vars, **kwargs):
         if value:
             return value
     return kwargs.get('default', '')
+
+
+def name2cid(account, ref):
+    h = hashlib.sha256()
+    for v in [account, '\0', ref]:
+        h.update(v)
+    return h.hexdigest()
