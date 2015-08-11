@@ -364,7 +364,8 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(201, 201, 201):
             chunks, bytes_transferred, content_checksum = api._put_stream(
-                name, src, {"content_length": 0}, chunks)
+                self.account, self.container, name, src, {"content_length": 0},
+                chunks)
 
         final_chunks = [
             {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
@@ -392,7 +393,8 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(201, Exception(), Exception()):
             chunks, bytes_transferred, content_checksum = api._put_stream(
-                name, src, {"content_length": 0}, chunks)
+                self.account, self.container, name, src, {"content_length": 0},
+                chunks)
         self.assertEqual(len(chunks), 1)
         chunk = {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
                  "hash": "d41d8cd98f00b204e9800998ecf8427e"}
@@ -409,8 +411,9 @@ class ObjectStorageTest(unittest.TestCase):
         src = empty_stream()
 
         with set_http_connect(200, slow_connect=True):
-            chunks, bytes_transferred, content_checksum = api. \
-                _put_stream(name, src, {"content_length": 0}, chunks)
+            chunks, bytes_transferred, content_checksum = api._put_stream(
+                self.account, self.container, name, src, {"content_length": 0},
+                chunks)
 
     def test_put_stream_client_timeout(self):
         api = self.api
@@ -425,4 +428,5 @@ class ObjectStorageTest(unittest.TestCase):
 
         with set_http_connect(200):
             self.assertRaises(exceptions.ClientReadTimeout, api._put_stream,
-                              name, src, {"content_length": 1}, chunks)
+                              self.account, self.container, name, src,
+                              {"content_length": 1}, chunks)
