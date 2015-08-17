@@ -12,10 +12,12 @@
 # License along with this library.
 
 
+import glob
 import hashlib
 import random
 import string
 from urllib import quote as _quote
+from ConfigParser import SafeConfigParser
 
 import os
 import codecs
@@ -64,3 +66,18 @@ def name2cid(account, ref):
     for v in [account, '\0', ref]:
         h.update(v)
     return h.hexdigest()
+
+
+def load_sds_conf(ns):
+    def places():
+        yield '/etc/oio/sds.conf'
+        for f in glob.glob('/etc/oio/sds.conf.d/*'):
+            yield f
+        yield os.path.expanduser('~/.oio/sds.conf')
+
+    parser = SafeConfigParser({})
+    success = parser.read(places())
+    if success and parser.has_section(ns):
+        return dict(parser.items(ns))
+    else:
+        return None
