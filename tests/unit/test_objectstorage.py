@@ -139,12 +139,13 @@ class ObjectStorageTest(unittest.TestCase):
     def test_container_create(self):
         api = self.api
         resp = fakes.FakeResponse()
-        resp.status_code = 201
+        resp.status_code = 204
         api._request = Mock(return_value=(resp, None))
         api.directory.link = Mock(return_value=None)
 
         name = utils.random_string()
-        api.container_create(self.account, name)
+        result = api.container_create(self.account, name)
+        self.assertEqual(result, True)
 
         api.directory.link.assert_called_once_with(self.account, name, "meta2",
                                                    headers=None)
@@ -152,6 +153,17 @@ class ObjectStorageTest(unittest.TestCase):
         params = {'acct': self.account, 'ref': name}
         api._request.assert_called_once_with(
             'POST', uri, params=params, headers=None)
+
+    def test_container_create_exist(self):
+        api = self.api
+        resp = fakes.FakeResponse()
+        resp.status_code = 201
+        api._request = Mock(return_value=(resp, None))
+        api.directory.link = Mock(return_value=None)
+
+        name = utils.random_string()
+        result = api.container_create(self.account, name)
+        self.assertEqual(result, False)
 
     def test_container_delete(self):
         api = self.api
