@@ -184,6 +184,10 @@ class ObjectStorageAPI(API):
             'POST', uri, params=params, headers=headers)
         if resp.status_code not in (204, 201):
             raise exc.from_response(resp, resp_body)
+        if resp.status_code == 201:
+            return False
+        else:
+            return True
 
     @handle_container_not_found
     def container_delete(self, account, container, headers=None):

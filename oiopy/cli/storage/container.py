@@ -6,7 +6,7 @@ from cliff import lister
 from oiopy.cli.utils import KeyValueAction
 
 
-class CreateContainer(command.Command):
+class CreateContainer(lister.Lister):
     """Create container"""
 
     log = logging.getLogger(__name__ + '.CreateContainer')
@@ -24,11 +24,17 @@ class CreateContainer(command.Command):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
+        results = []
+        account = self.app.client_manager.get_account()
         for container in parsed_args.containers:
-            self.app.client_manager.storage.container_create(
-                self.app.client_manager.get_account(),
-                container
-            )
+            success = self.app.client_manager.storage.container_create(
+                account,
+                container)
+            results.append((account, container, success))
+
+        columns = ('account', 'container', 'created')
+        l = (r for r in results)
+        return columns, l
 
 
 class SetContainer(command.Command):
