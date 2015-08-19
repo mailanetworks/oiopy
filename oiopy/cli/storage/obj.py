@@ -9,7 +9,7 @@ from cliff import show
 from oiopy.cli.utils import KeyValueAction
 
 
-class CreateObject(command.Command):
+class CreateObject(lister.Lister):
     """Upload object"""
 
     log = logging.getLogger(__name__ + '.CreateObject')
@@ -41,14 +41,20 @@ class CreateObject(command.Command):
             f.seek(currpos)
             return total_size
 
+        results = []
         for obj in parsed_args.objects:
             with io.open(obj, 'rb') as f:
-                self.app.client_manager.storage.object_create(
+                data = self.app.client_manager.storage.object_create(
                     self.app.client_manager.get_account(),
                     container,
                     file_or_path=f,
-                    content_length=get_file_size(f)
-                )
+                    content_length=get_file_size(f))
+
+                results.append((obj, data[1], data[2]))
+
+        l = (obj for obj in results)
+        columns = ('Name', 'Size', 'Hash')
+        return columns, l
 
 
 class DeleteObject(command.Command):
@@ -106,18 +112,29 @@ class ShowObject(show.ShowOne):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
+        account = self.app.client_manager.get_account()
         container = parsed_args.container
+        obj = parsed_args.object
 
         data = self.app.client_manager.storage.object_show(
-            self.app.client_manager.get_account(),
+            account,
             container,
-            parsed_args.object
-        )
-        return zip(*sorted(data.iteritems()))
+            obj)
+        info = {'account': account,
+                'container': container,
+                'object': obj,
+                'mime-type': data['mime-type'],
+                'size': data['length'],
+                'hash': data['hash'].lower(),
+                'ctime': data['ctime'],
+                'policy': data['policy']}
+        for k, v in data['properties'].iteritems():
+            info['meta.' + k] = v
+        return zip(*sorted(info.iteritems()))
 
 
 class SetObject(command.Command):
-    """Set object"""
+    """Set object properties"""
 
     log = logging.getLogger(__name__ + '.SetObject')
 
@@ -129,15 +146,33 @@ class SetObject(command.Command):
             help='Container'
         )
         parser.add_argument(
+            'object',
+            metavar='<object>',
+            help='Object')
+        parser.add_argument(
             '--property',
             metavar='<key=value>',
             action=KeyValueAction,
             help='Property to add to this object'
         )
+        parser.add_argument(
+            '--clear',
+            default=False,
+            help='Clear previous properties',
+            action='store_true')
         return parser
 
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
+        container = parsed_args.container
+        obj = parsed_args.object
+        properties = parsed_args.property
+        self.app.client_manager.storage.object_set_properties(
+            self.app.client_manager.get_account(),
+            container,
+            obj,
+            properties,
+            parsed_args.clear)
 
 
 class SaveObject(command.Command):
@@ -260,3 +295,41 @@ class ListObject(lister.Lister):
         results = ((obj['name'], obj['size'], obj['hash']) for obj in l)
         columns = ('Name', 'Size', 'Hash')
         return (columns, results)
+
+
+class UnsetObject(command.Command):
+    """Unset object properties"""
+
+    log = logging.getLogger(__name__ + '.UnsetObject')
+
+    def get_parser(self, prog_name):
+        parser = super(UnsetObject, self).get_parser(prog_name)
+        parser.add_argument(
+            'container',
+            metavar='<container>',
+            help='Container'
+        )
+        parser.add_argument(
+            'object',
+            metavar='<object>',
+            help='Object to modify')
+        parser.add_argument(
+            '--property',
+            metavar='<key>',
+            default=[],
+            action='append',
+            help='Property to remove from object',
+            required=True
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+        container = parsed_args.container
+        obj = parsed_args.object
+        properties = parsed_args.property
+        self.app.client_manager.storage.object_del_properties(
+            self.app.client_manager.get_account(),
+            container,
+            obj,
+            properties)

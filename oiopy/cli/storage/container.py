@@ -30,15 +30,15 @@ class CreateContainer(lister.Lister):
             success = self.app.client_manager.storage.container_create(
                 account,
                 container)
-            results.append((account, container, success))
+            results.append((container, success))
 
-        columns = ('account', 'container', 'created')
+        columns = ('Name', 'Created')
         l = (r for r in results)
         return columns, l
 
 
 class SetContainer(command.Command):
-    """Set container"""
+    """Set container properties"""
 
     log = logging.getLogger(__name__ + '.SetContainer')
 
@@ -47,13 +47,13 @@ class SetContainer(command.Command):
         parser.add_argument(
             'container',
             metavar='<container>',
-            help='Container name'
+            help='Container to modify'
         )
         parser.add_argument(
             '--property',
             metavar='<key=value>',
             action=KeyValueAction,
-            help='Set a property on <container>'
+            help='Property to add/update for this container'
         )
         parser.add_argument(
             '--clear',
@@ -67,14 +67,10 @@ class SetContainer(command.Command):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
-        metadata = {}
-        for m in parsed_args.metadata:
-            k, v = m.split(':', 1)
-            metadata['user.%s' % k] = v
-        self.app.client_manager.storage.container_update(
+        self.app.client_manager.storage.container_set_properties(
             self.app.client_manager.get_account(),
             parsed_args.container,
-            metadata,
+            parsed_args.property,
             clear=parsed_args.clear
         )
 
@@ -122,11 +118,22 @@ class ShowContainer(show.ShowOne):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
+        account = self.app.client_manager.get_account()
+
         data = self.app.client_manager.storage.container_show(
-            self.app.client_manager.get_account(),
+            account,
             parsed_args.container
         )
-        return zip(*sorted(data.iteritems()))
+
+        info = {'account': data['sys.account'],
+                'base_name': data['sys.name'],
+                'container': data['sys.user.name'],
+                'ctime': data['sys.m2.ctime'],
+                'bytes_usage': data.get('sys.m2.usage', 0)}
+        for k, v in data.iteritems():
+            if k.startswith('user.'):
+                info['meta.' + k[len('meta.'):]] = v
+        return zip(*sorted(info.iteritems()))
 
 
 class ListContainer(lister.Lister):
@@ -188,3 +195,34 @@ class ListContainer(lister.Lister):
 
         results = ((v[0], v[2], v[1]) for v in l)
         return columns, results
+
+
+class UnsetContainer(command.Command):
+    """Unset container properties"""
+
+    log = logging.getLogger(__name__ + '.UnsetContainer')
+
+    def get_parser(self, prog_name):
+        parser = super(UnsetContainer, self).get_parser(prog_name)
+        parser.add_argument(
+            'container',
+            metavar='<container>',
+            help='Container to modify'
+        )
+        parser.add_argument(
+            '--property',
+            metavar='<key>',
+            action='append',
+            default=[],
+            help='Property to remove from container',
+            required=True
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        self.app.client_manager.storage.container_del_properties(
+            self.app.client_manager.get_account(),
+            parsed_args.container,
+            parsed_args.property)

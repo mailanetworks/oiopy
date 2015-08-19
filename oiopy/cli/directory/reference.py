@@ -2,19 +2,22 @@ import logging
 
 from cliff import command
 from cliff import lister
+from cliff import show
+
+from oiopy.cli.utils import KeyValueAction
 
 
-class ShowReference(lister.Lister):
-    """Show reference"""
+class ListReference(lister.Lister):
+    """List reference"""
 
-    log = logging.getLogger(__name__ + '.ShowReference')
+    log = logging.getLogger(__name__ + '.ListReference')
 
     def get_parser(self, prog_name):
-        parser = super(ShowReference, self).get_parser(prog_name)
+        parser = super(ListReference, self).get_parser(prog_name)
         parser.add_argument(
             'reference',
             metavar='<reference>',
-            help='Reference to show'
+            help='Reference to list'
         )
         return parser
 
@@ -29,6 +32,35 @@ class ShowReference(lister.Lister):
         results = ((d['type'], d['host'], d['args'], d['seq'])
                    for d in data['srv'])
         return columns, results
+
+
+class ShowReference(show.ShowOne):
+    """Show reference"""
+
+    log = logging.getLogger(__name__ + '.ShowReference')
+
+    def get_parser(self, prog_name):
+        parser = super(ShowReference, self).get_parser(prog_name)
+        parser.add_argument(
+            'reference',
+            metavar='<reference>',
+            help='Reference to show')
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        account = self.app.client_manager.get_account()
+        reference = parsed_args.reference
+
+        data = self.app.client_manager.directory.get_properties(
+            account,
+            parsed_args.reference)
+        info = {'account': account,
+                'name': reference}
+        for k, v in data.iteritems():
+            info['meta.' + k] = v
+        return zip(*sorted(info.iteritems()))
 
 
 class CreateReference(command.Command):
@@ -217,9 +249,56 @@ class SetReference(command.Command):
         parser.add_argument(
             'reference',
             metavar='<reference>',
-            help='Reference to set'
+            help='Reference to modify'
         )
+        parser.add_argument(
+            '--property',
+            metavar='<key=value>',
+            action=KeyValueAction,
+            help='Property to add/update for this reference')
+        parser.add_argument(
+            '--clear',
+            dest='clear',
+            default=False,
+            help='Clear previous properties',
+            action='store_true')
         return parser
 
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
+
+        self.app.client_manager.directory.set_properties(
+            self.app.client_manager.get_account(),
+            parsed_args.reference,
+            parsed_args.property,
+            parsed_args.clear)
+
+
+class UnsetReference(command.Command):
+    """Unset reference properties"""
+
+    log = logging.getLogger(__name__ + '.UnsetReference')
+
+    def get_parser(self, prog_name):
+        parser = super(UnsetReference, self).get_parser(prog_name)
+        parser.add_argument(
+            'reference',
+            metavar='<reference>',
+            help='Reference to modify'
+        )
+        parser.add_argument(
+            '--property',
+            metavar='<key>',
+            action='append',
+            default=[],
+            help='Property to remove from reference',
+            required=True)
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        self.app.client_manager.directory.del_properties(
+            self.app.client_manager.get_account(),
+            parsed_args.reference,
+            parsed_args.property)

@@ -54,7 +54,7 @@ class CreateAccount(command.Command):
 
 
 class SetAccount(command.Command):
-    """Set account"""
+    """Set account properties"""
 
     log = logging.getLogger(__name__ + '.SetAccount')
 
@@ -70,22 +70,45 @@ class SetAccount(command.Command):
             '--property',
             metavar='<key=value>',
             action=KeyValueAction,
-            help='Property to add/update to this account'
-        )
-        parser.add_argument(
-            '-d',
-            '--delete-property',
-            action='append',
-            metavar='<key>',
-            help='Property to delete for this account'
+            help='Property to add/update for this account'
         )
         return parser
 
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
-        self.app.client_manager.storage.account_update(
+        self.app.client_manager.storage.account_set_properties(
             account=parsed_args.account,
-            metadata=parsed_args.property,
-            to_delete=parsed_args.delete_property
+            metadata=parsed_args.property
+        )
+
+
+class UnsetAccount(command.Command):
+    """Unset account properties"""
+
+    log = logging.getLogger(__name__ + '.UnsetAccount')
+
+    def get_parser(self, prog_name):
+        parser = super(UnsetAccount, self).get_parser(prog_name)
+        parser.add_argument(
+            'account',
+            metavar='<account>',
+            help='Account to modify',
+        )
+        parser.add_argument(
+            '--property',
+            metavar='<key>',
+            action='append',
+            default=[],
+            help='Property to delete from account',
+            required=True
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        self.app.client_manager.storage.account_del_properties(
+            account=parsed_args.account,
+            properties=parsed_args.property
         )
