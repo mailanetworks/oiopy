@@ -136,18 +136,21 @@ class DirectoryAPI(API):
             headers=headers)
         return resp_body
 
-    def set_properties(self, account, reference, properties, headers=None):
+    def set_properties(self, account, reference, properties, clear=False,
+                       headers=None):
         """
         Set properties for a reference.
         """
         uri = self._make_uri('reference/set_properties')
         params = self._make_params(account, reference)
+        if clear:
+            params.update({'flush': 1})
         data = properties
         resp, resp_body = self._request(
             'POST', uri, params=params, data=json.dumps(data),
             headers=headers)
 
-    def delete_properties(self, account, reference, properties, headers=None):
+    def del_properties(self, account, reference, properties, headers=None):
         """
         Delete properties for a reference.
         """

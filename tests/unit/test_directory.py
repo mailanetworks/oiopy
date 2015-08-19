@@ -196,7 +196,7 @@ class DirectoryTest(unittest.TestCase):
         properties = [utils.random_string()]
         resp = fakes.FakeResponse()
         api._request = Mock(return_value=(resp, None))
-        api.delete_properties(self.account, name, properties)
+        api.del_properties(self.account, name, properties)
         uri = "%s/reference/del_properties" % self.uri_base
         params = {'acct': self.account, 'ref': name}
         data = json.dumps(properties)

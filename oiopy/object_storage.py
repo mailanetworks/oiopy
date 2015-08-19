@@ -170,6 +170,12 @@ class ObjectStorageAPI(API):
         resp, resp_body = self._account_request('POST', uri, params=params,
                                                 data=data, headers=headers)
 
+    def account_set_properties(self, account, properties, headers=None):
+        self.account_update(account, properties, headers=headers)
+
+    def account_del_properties(self, account, properties, headers=None):
+        self.account_update(account, None, properties, headers=headers)
+
     def container_create(self, account, container, headers=None):
         try:
             self.directory.link(account, container, "meta2", headers=headers)
@@ -224,22 +230,38 @@ class ObjectStorageAPI(API):
             'POST', uri, params=params, headers=headers)
         return resp_body
 
-    @handle_container_not_found
     def container_update(self, account, container, metadata, clear=False,
                          headers=None):
+        if not metadata:
+            self.container_del_properties(
+                account, container, [], headers=headers)
+        else:
+            self.container_set_properties(
+                account, container, metadata, clear, headers=headers)
+
+    @handle_container_not_found
+    def container_set_properties(self, account, container, properties,
+                                 clear=False, headers=None):
         params = self._make_params(account, container)
 
-        if not metadata:
-            uri = self._make_uri('container/del_properties')
-            args = []
-        else:
-            if clear:
-                params.update({'flush': 1})
-            uri = self._make_uri('container/set_properties')
-            args = metadata
+        if clear:
+            params.update({'flush': 1})
+
+        uri = self._make_uri('container/set_properties')
 
         resp, resp_body = self._request(
-            'POST', uri, data=json.dumps(args), params=params,
+            'POST', uri, data=json.dumps(properties), params=params,
+            headers=headers)
+
+    @handle_container_not_found
+    def container_del_properties(self, account, container, properties,
+                                 headers=None):
+        params = self._make_params(account, container)
+
+        uri = self._make_uri('container/del_properties')
+
+        resp, resp_body = self._request(
+            'POST', uri, data=json.dumps(properties), params=params,
             headers=headers)
 
     @handle_container_not_found
@@ -342,25 +364,37 @@ class ObjectStorageAPI(API):
         meta = _make_object_metadata(resp.headers)
         for k, v in resp_body.iteritems():
             meta[k] = v
+        meta['properties'] = resp_body
         return meta
 
-    @handle_object_not_found
     def object_update(self, account, container, obj, metadata, clear=False,
                       headers=None):
-        params = self._make_params(account, container, obj)
-
         if clear:
-            uri = self._make_uri('content/del_properties')
-            args = []
-            resp, resp_body = self._request(
-                'POST', uri, data=json.dumps(args), params=params,
-                headers=headers)
+            self.object_del_properties(
+                account, container, obj, [], headers=headers)
         if metadata:
-            uri = self._make_uri('content/set_properties')
-            args = metadata
-            resp, resp_body = self._request(
-                'POST', uri, data=json.dumps(args), params=params,
-                headers=headers)
+            self.object_set_properties(
+                account, container, obj, metadata, headers=headers)
+
+    @handle_object_not_found
+    def object_set_properties(self, account, container, obj, properties,
+                              clear=False, headers=None):
+        params = self._make_params(account, container, obj)
+        if clear:
+            params.update({'flush': 1})
+        uri = self._make_uri('content/set_properties')
+        resp, resp_body = self._request(
+            'POST', uri, data=json.dumps(properties), params=params,
+            headers=headers)
+
+    @handle_object_not_found
+    def object_del_properties(self, account, container, obj, properties,
+                              headers=None):
+        params = self._make_params(account, container, obj)
+        uri = self._make_uri('content/del_properties')
+        resp, resp_body = self._request(
+            'POST', uri, data=json.dumps(properties), params=params,
+            headers=headers)
 
     def _make_uri(self, action):
         uri = "%s/%s" % (self.namespace, action)
