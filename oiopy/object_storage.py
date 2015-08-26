@@ -408,8 +408,9 @@ class ObjectStorageAPI(API):
         return params
 
     def _get_account_url(self):
-        uri = 'lb/%s/account' % self.namespace
-        resp, resp_body = self._request('GET', uri)
+        uri = self._make_uri('lb/choose')
+        params = {'pool': 'account'}
+        resp, resp_body = self._request('GET', uri, params=params)
         if resp.status_code == 200:
             instance_info = resp_body[0]
             return 'http://%s/' % instance_info['addr']
