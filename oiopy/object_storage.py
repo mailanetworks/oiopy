@@ -145,7 +145,7 @@ class ObjectStorageAPI(API):
         )
         self.namespace = namespace
 
-    def account_create(self, account, headers=None):
+    def account_create(self, account, headers={}):
         uri = '/v1.0/account/create'
         account_id = utils.quote(account, '')
         params = {'id': account_id}
@@ -154,7 +154,7 @@ class ObjectStorageAPI(API):
         created = (resp.status_code == 201)
         return created
 
-    def account_show(self, account, headers=None):
+    def account_show(self, account, headers={}):
         uri = "/v1.0/account/show"
         account_id = utils.quote(account, '')
         params = {'id': account_id}
@@ -162,7 +162,7 @@ class ObjectStorageAPI(API):
                                                 headers=headers)
         return resp_body
 
-    def account_update(self, account, metadata, to_delete=None, headers=None):
+    def account_update(self, account, metadata, to_delete=None, headers={}):
         uri = "/v1.0/account/update"
         account_id = utils.quote(account, '')
         params = {'id': account_id}
@@ -170,22 +170,17 @@ class ObjectStorageAPI(API):
         resp, resp_body = self._account_request('POST', uri, params=params,
                                                 data=data, headers=headers)
 
-    def account_set_properties(self, account, properties, headers=None):
+    def account_set_properties(self, account, properties, headers={}):
         self.account_update(account, properties, headers=headers)
 
-    def account_del_properties(self, account, properties, headers=None):
+    def account_del_properties(self, account, properties, headers={}):
         self.account_update(account, None, properties, headers=headers)
 
-    def container_create(self, account, container, headers=None):
-        try:
-            self.directory.link(account, container, "meta2", headers=headers)
-        except exc.NotFound:
-            self.directory.create(account, container, headers=headers)
-            self.directory.link(account, container, "meta2", headers=headers)
-
+    def container_create(self, account, container, headers={}):
         uri = self._make_uri('container/create')
         params = self._make_params(account, container)
 
+        headers['x-oio-action-mode'] = 'autocreate'
         resp, resp_body = self._request(
             'POST', uri, params=params, headers=headers)
         if resp.status_code not in (204, 201):
@@ -196,7 +191,7 @@ class ObjectStorageAPI(API):
             return True
 
     @handle_container_not_found
-    def container_delete(self, account, container, headers=None):
+    def container_delete(self, account, container, headers={}):
         uri = self._make_uri('container/destroy')
         params = self._make_params(account, container)
         try:
@@ -209,7 +204,7 @@ class ObjectStorageAPI(API):
 
     def container_list(self, account, limit=None, marker=None,
                        end_marker=None, prefix=None, delimiter=None,
-                       headers=None):
+                       headers={}):
         uri = "v1.0/account/containers"
         account_id = utils.quote(account, '')
         params = {"id": account_id, "limit": limit, "marker": marker,
@@ -223,7 +218,7 @@ class ObjectStorageAPI(API):
         return listing, resp_body
 
     @handle_container_not_found
-    def container_show(self, account, container, headers=None):
+    def container_show(self, account, container, headers={}):
         uri = self._make_uri('container/get_properties')
         params = self._make_params(account, container)
         resp, resp_body = self._request(
@@ -231,7 +226,7 @@ class ObjectStorageAPI(API):
         return resp_body
 
     def container_update(self, account, container, metadata, clear=False,
-                         headers=None):
+                         headers={}):
         if not metadata:
             self.container_del_properties(
                 account, container, [], headers=headers)
@@ -241,7 +236,7 @@ class ObjectStorageAPI(API):
 
     @handle_container_not_found
     def container_set_properties(self, account, container, properties,
-                                 clear=False, headers=None):
+                                 clear=False, headers={}):
         params = self._make_params(account, container)
 
         if clear:
@@ -255,7 +250,7 @@ class ObjectStorageAPI(API):
 
     @handle_container_not_found
     def container_del_properties(self, account, container, properties,
-                                 headers=None):
+                                 headers={}):
         params = self._make_params(account, container)
 
         uri = self._make_uri('container/del_properties')
@@ -268,7 +263,7 @@ class ObjectStorageAPI(API):
     def object_create(self, account, container, file_or_path=None, data=None,
                       etag=None, obj_name=None, content_type=None,
                       content_encoding=None, content_length=None,
-                      metadata=None, headers=None):
+                      metadata=None, headers={}):
         if (data, file_or_path) == (None, None):
             raise exc.MissingData()
         src = data if data is not None else file_or_path
@@ -313,7 +308,7 @@ class ObjectStorageAPI(API):
                     account, container, obj_name, f, sysmeta, headers=headers)
 
     @handle_object_not_found
-    def object_delete(self, account, container, obj, headers=None):
+    def object_delete(self, account, container, obj, headers={}):
         uri = self._make_uri('content/delete')
         params = self._make_params(account, container, obj)
         resp, resp_body = self._request(
@@ -322,7 +317,7 @@ class ObjectStorageAPI(API):
     @handle_container_not_found
     def object_list(self, account, container, limit=None, marker=None,
                     delimiter=None, prefix=None, end_marker=None,
-                    headers=None):
+                    headers={}):
         uri = self._make_uri('container/list')
         params = self._make_params(account, container)
         d = {"max": limit,
@@ -339,7 +334,7 @@ class ObjectStorageAPI(API):
 
     @handle_object_not_found
     def object_fetch(self, account, container, obj, size=None, offset=0,
-                     headers=None):
+                     headers={}):
         uri = self._make_uri('content/show')
         params = self._make_params(account, container, obj)
         resp, resp_body = self._request(
@@ -355,7 +350,7 @@ class ObjectStorageAPI(API):
         return meta, stream
 
     @handle_object_not_found
-    def object_show(self, account, container, obj, headers=None):
+    def object_show(self, account, container, obj, headers={}):
         uri = self._make_uri('content/get_properties')
         params = self._make_params(account, container, obj)
         resp, resp_body = self._request(
@@ -368,7 +363,7 @@ class ObjectStorageAPI(API):
         return meta
 
     def object_update(self, account, container, obj, metadata, clear=False,
-                      headers=None):
+                      headers={}):
         if clear:
             self.object_del_properties(
                 account, container, obj, [], headers=headers)
@@ -378,7 +373,7 @@ class ObjectStorageAPI(API):
 
     @handle_object_not_found
     def object_set_properties(self, account, container, obj, properties,
-                              clear=False, headers=None):
+                              clear=False, headers={}):
         params = self._make_params(account, container, obj)
         if clear:
             params.update({'flush': 1})
@@ -389,7 +384,7 @@ class ObjectStorageAPI(API):
 
     @handle_object_not_found
     def object_del_properties(self, account, container, obj, properties,
-                              headers=None):
+                              headers={}):
         params = self._make_params(account, container, obj)
         uri = self._make_uri('content/del_properties')
         resp, resp_body = self._request(
@@ -426,10 +421,11 @@ class ObjectStorageAPI(API):
         return resp, resp_body
 
     def _object_create(self, account, container, obj_name, src,
-                       sysmeta, headers=None):
+                       sysmeta, headers={}):
         uri = self._make_uri('content/prepare')
         params = self._make_params(account, container, obj_name)
         args = {'size': sysmeta['content_length']}
+        headers['x-oio-action-mode'] = 'autocreate'
         resp, resp_body = self._request(
             'POST', uri, data=json.dumps(args), params=params,
             headers=headers)
@@ -458,7 +454,7 @@ class ObjectStorageAPI(API):
         return final_chunks, bytes_transferred, content_checksum
 
     def _put_stream(self, account, container, obj_name, src, sysmeta, chunks,
-                    headers=None):
+                    headers={}):
         global_checksum = hashlib.md5()
         total_bytes_transferred = 0
         content_chunks = []
@@ -580,7 +576,7 @@ class ObjectStorageAPI(API):
         return content_chunks, total_bytes_transferred, content_checksum
 
     def _fetch_stream(self, meta, chunks, rain_security, size, offset,
-                      headers=None):
+                      headers={}):
         current_offset = 0
         total_bytes = 0
         if size is None:
@@ -613,7 +609,7 @@ class ObjectStorageAPI(API):
 
 
 class ChunkDownloadHandler(object):
-    def __init__(self, chunks, size, offset, headers=None):
+    def __init__(self, chunks, size, offset, headers={}):
         self.chunks = chunks
         self.failed_chunks = []
 
