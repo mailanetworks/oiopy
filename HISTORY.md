@@ -1,6 +1,14 @@
 Release History
 ===============
 
+0.5.0 (2015-08-28)
+------------------
+
+* CLI
+* 3.0 oio proxy routes support
+* Autocreate for containers
+* Better testing automation
+
 0.4 (2015-06-23)
 ------------------
 
