@@ -1,29 +1,12 @@
 import uuid
-from ConfigParser import SafeConfigParser
 
-import os
-import testtools
-
+from tests.functional.utils import FunctionalTestCase
 from oiopy.object_storage import ObjectStorageAPI
 from oiopy import exceptions
 from oiopy import utils
 
 
-class TestObjectStorageFunctional(testtools.TestCase):
-    def __init__(self, *args, **kwargs):
-        super(TestObjectStorageFunctional, self).__init__(*args, **kwargs)
-        self._load_config()
-
-    def _load_config(self):
-        default_conf_path = os.path.expanduser('~/.oio/sds/conf/test.conf')
-        config_file = os.environ.get('SDS_TEST_CONFIG_FILE',
-                                     default_conf_path)
-        config = SafeConfigParser()
-        config.read(config_file)
-        self.proxyd_uri = config.get('func_test', 'proxyd_uri')
-        self.namespace = config.get('func_test', 'namespace')
-        self.account = config.get('func_test', 'account')
-
+class TestObjectStorageFunctional(FunctionalTestCase):
     def setUp(self):
         super(TestObjectStorageFunctional, self).setUp()
 
