@@ -43,7 +43,7 @@ class ClientManager(object):
                 msg = 'Set a namespace with --oio-ns, OIO_NS\n'
                 raise exceptions.CommandError('Missing parameter: \n%s' % msg)
             self.namespace = self._options['namespace']
-            sds_conf = load_sds_conf(self.namespace)
+            sds_conf = load_sds_conf(self.namespace) or {}
             if not self._options.get('proxyd_url') and 'proxy' in sds_conf:
                 proxyd_url = 'http://%s' % sds_conf.get('proxy')
                 self._options['proxyd_url'] = proxyd_url

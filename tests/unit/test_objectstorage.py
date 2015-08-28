@@ -51,8 +51,8 @@ class ObjectStorageTest(unittest.TestCase):
             raise exceptions.NotFound("No container")
 
         container = utils.random_string()
-        self.assertRaises(exceptions.NoSuchContainer, test, self, self.account,
-                          container)
+        self.assertRaises(
+            exceptions.NoSuchContainer, test, self, self.account, container)
 
     def test_handle_object_not_found(self):
         @handle_object_not_found
@@ -60,8 +60,9 @@ class ObjectStorageTest(unittest.TestCase):
             raise exceptions.NotFound("No object")
 
         obj = utils.random_string()
-        self.assertRaises(exceptions.NoSuchObject, test, self, self.account,
-                          self.container, obj)
+        self.assertRaises(
+            exceptions.NoSuchObject, test, self, self.account, self.container,
+            obj)
 
     def test_container_list(self):
         resp = fakes.FakeResponse()
@@ -74,19 +75,15 @@ class ObjectStorageTest(unittest.TestCase):
         body = {"listing": [[name, 0, 0, 0]]}
         self.api._request = Mock(return_value=(resp, body))
         self.api._get_account_url = Mock(return_value='fake_endpoint')
-        containers, meta = self.api.container_list(self.account, limit=limit,
-                                                   marker=marker,
-                                                   prefix=prefix,
-                                                   delimiter=delimiter,
-                                                   end_marker=end_marker,
-                                                   headers=self.headers)
+        containers, meta = self.api.container_list(
+            self.account, limit=limit, marker=marker, prefix=prefix,
+            delimiter=delimiter, end_marker=end_marker, headers=self.headers)
         params = {"id": self.account, "prefix": prefix, "delimiter": delimiter,
                   "marker": marker, "end_marker": end_marker, "limit": limit}
         uri = "v1.0/account/containers"
-        self.api._request.assert_called_once_with('GET', uri,
-                                                  endpoint='fake_endpoint',
-                                                  params=params,
-                                                  headers=self.headers)
+        self.api._request.assert_called_once_with(
+            'GET', uri, endpoint='fake_endpoint', params=params,
+            headers=self.headers)
         self.assertEqual(len(containers), 1)
 
     def test_object_list(self):
@@ -100,17 +97,17 @@ class ObjectStorageTest(unittest.TestCase):
         name1 = utils.random_string()
         resp_body = {"objects": [{"name": name0}, {"name": name1}]}
         api._request = Mock(return_value=(None, resp_body))
-        l = api.object_list(self.account, self.container, limit=limit,
-                            marker=marker, prefix=prefix,
-                            delimiter=delimiter, end_marker=end_marker,
-                            headers=None)
+        l = api.object_list(
+            self.account, self.container, limit=limit, marker=marker,
+            prefix=prefix, delimiter=delimiter, end_marker=end_marker,
+            headers=self.headers)
         uri = "%s/container/list" % self.uri_base
         params = {'acct': self.account, 'ref': self.container,
                   'marker': marker, 'max': limit,
                   'delimiter': delimiter, 'prefix': prefix,
                   'end_marker': end_marker}
         api._request.assert_called_once_with(
-            'GET', uri, params=params, headers=None)
+            'GET', uri, params=params, headers=self.headers)
         self.assertEqual(len(l['objects']), 2)
 
     def test_container_show(self):
@@ -122,11 +119,11 @@ class ObjectStorageTest(unittest.TestCase):
             container_headers["size"]: cont_size
         }
         api._request = Mock(return_value=(resp, {}))
-        info = api.container_show(self.account, name)
+        info = api.container_show(self.account, name, headers=self.headers)
         uri = "%s/container/get_properties" % self.uri_base
         params = {'acct': self.account, 'ref': name}
         api._request.assert_called_once_with(
-            'POST', uri, params=params, headers=None)
+            'POST', uri, params=params, headers=self.headers)
         self.assertEqual(info, {})
 
     def test_container_show_not_found(self):
@@ -141,25 +138,22 @@ class ObjectStorageTest(unittest.TestCase):
         resp = fakes.FakeResponse()
         resp.status_code = 204
         api._request = Mock(return_value=(resp, None))
-        api.directory.link = Mock(return_value=None)
 
         name = utils.random_string()
-        result = api.container_create(self.account, name)
+        result = api.container_create(self.account, name, headers=self.headers)
         self.assertEqual(result, True)
 
-        api.directory.link.assert_called_once_with(self.account, name, "meta2",
-                                                   headers=None)
         uri = "%s/container/create" % self.uri_base
         params = {'acct': self.account, 'ref': name}
+        self.headers['x-oio-action-mode'] = 'autocreate'
         api._request.assert_called_once_with(
-            'POST', uri, params=params, headers=None)
+            'POST', uri, params=params, headers=self.headers)
 
     def test_container_create_exist(self):
         api = self.api
         resp = fakes.FakeResponse()
         resp.status_code = 201
         api._request = Mock(return_value=(resp, None))
-        api.directory.link = Mock(return_value=None)
 
         name = utils.random_string()
         result = api.container_create(self.account, name)
@@ -173,15 +167,14 @@ class ObjectStorageTest(unittest.TestCase):
         api._request = Mock(return_value=(resp, None))
         api.directory.unlink = Mock(return_value=None)
         name = utils.random_string()
-        api.container_delete(self.account, name)
+        api.container_delete(self.account, name, headers=self.headers)
 
-        api.directory.unlink.assert_called_once_with(self.account, name,
-                                                     "meta2",
-                                                     headers=None)
+        api.directory.unlink.assert_called_once_with(
+            self.account, name, "meta2", headers=self.headers)
         uri = "%s/container/destroy" % self.uri_base
         params = {'acct': self.account, 'ref': name}
         api._request.assert_called_once_with(
-            'POST', uri, params=params, headers=None)
+            'POST', uri, params=params, headers=self.headers)
 
     def test_container_delete_not_empty(self):
         api = self.api
@@ -190,8 +183,9 @@ class ObjectStorageTest(unittest.TestCase):
         api.directory.unlink = Mock(return_value=None)
         name = utils.random_string()
 
-        self.assertRaises(exceptions.ContainerNotEmpty, api.container_delete,
-                          self.account, name)
+        self.assertRaises(
+            exceptions.ContainerNotEmpty, api.container_delete, self.account,
+            name)
 
     def test_container_update(self):
         api = self.api
@@ -202,13 +196,13 @@ class ObjectStorageTest(unittest.TestCase):
         meta = {key: value}
         resp = fakes.FakeResponse()
         api._request = Mock(return_value=(resp, None))
-        api.container_update(self.account, name, meta)
+        api.container_update(self.account, name, meta, headers=self.headers)
 
         data = json.dumps(meta)
         uri = "%s/container/set_properties" % self.uri_base
         params = {'acct': self.account, 'ref': name}
         api._request.assert_called_once_with(
-            'POST', uri, data=data, params=params, headers=None)
+            'POST', uri, data=data, params=params, headers=self.headers)
 
     def test_object_show(self):
         api = self.api
@@ -222,13 +216,14 @@ class ObjectStorageTest(unittest.TestCase):
                         object_headers["hash"]: content_hash,
                         object_headers["content_type"]: content_type}
         api._request = Mock(return_value=(resp, {}))
-        obj = api.object_show(self.account, self.container, name)
+        obj = api.object_show(
+            self.account, self.container, name, headers=self.headers)
 
         uri = "%s/content/get_properties" % self.uri_base
         params = {'acct': self.account, 'ref': self.container,
                   'path': name}
         api._request.assert_called_once_with(
-            'POST', uri, params=params, headers=None)
+            'POST', uri, params=params, headers=self.headers)
         self.assertIsNotNone(obj)
 
     def test_object_create_no_data(self):
@@ -246,14 +241,16 @@ class ObjectStorageTest(unittest.TestCase):
         api = self.api
         name = utils.random_string()
         f = Mock()
-        self.assertRaises(exceptions.MissingContentLength, api.object_create,
-                          self.account, self.container, f, obj_name=name)
+        self.assertRaises(
+            exceptions.MissingContentLength, api.object_create, self.account,
+            self.container, f, obj_name=name)
 
     def test_object_create_missing_file(self):
         api = self.api
         name = utils.random_string()
-        self.assertRaises(exceptions.FileNotFound, api.object_create,
-                          self.account, self.container, name)
+        self.assertRaises(
+            exceptions.FileNotFound, api.object_create, self.account,
+            self.container, name)
 
     def test_object_update(self):
         api = self.api
@@ -264,14 +261,15 @@ class ObjectStorageTest(unittest.TestCase):
         meta = {key: value}
         resp = fakes.FakeResponse()
         api._request = Mock(return_value=(resp, None))
-        api.object_update(self.account, self.container, name, meta)
+        api.object_update(
+            self.account, self.container, name, meta, headers=self.headers)
 
         data = json.dumps(meta)
         uri = "%s/content/set_properties" % self.uri_base
         params = {'acct': self.account, 'ref': self.container,
                   'path': name}
         api._request.assert_called_once_with(
-            'POST', uri, data=data, params=params, headers=None)
+            'POST', uri, data=data, params=params, headers=self.headers)
 
     def test_object_delete(self):
         api = self.api
@@ -283,20 +281,22 @@ class ObjectStorageTest(unittest.TestCase):
         ]
         api._request = Mock(return_value=(None, resp_body))
 
-        api.object_delete(self.account, self.container, name)
+        api.object_delete(
+            self.account, self.container, name, headers=self.headers)
 
         uri = "%s/content/delete" % self.uri_base
         params = {'acct': self.account, 'ref': self.container,
                   'path': name}
         api._request.assert_called_once_with(
-            'POST', uri, params=params, headers=None)
+            'POST', uri, params=params, headers=self.headers)
 
     def test_object_delete_not_found(self):
         api = self.api
         name = utils.random_string()
         api._request = Mock(side_effect=exceptions.NotFound("No object"))
-        self.assertRaises(exceptions.NoSuchObject, api.object_delete,
-                          self.account, self.container, name)
+        self.assertRaises(
+            exceptions.NoSuchObject, api.object_delete, self.account,
+            self.container, name)
 
     def test_object_store(self):
         api = self.api
@@ -308,8 +308,9 @@ class ObjectStorageTest(unittest.TestCase):
         ]
         api._request = Mock(return_value=(None, raw_chunks))
         with set_http_connect(201, 201, 201):
-            api.object_create(self.account, self.container, obj_name=name,
-                              data="x")
+            api.object_create(
+                self.account, self.container, obj_name=name, data="x",
+                headers=self.headers)
 
     def test_sort_chunks(self):
         raw_chunks = [
@@ -439,6 +440,6 @@ class ObjectStorageTest(unittest.TestCase):
         src = fakes.FakeTimeoutStream(5)
 
         with set_http_connect(200):
-            self.assertRaises(exceptions.ClientReadTimeout, api._put_stream,
-                              self.account, self.container, name, src,
-                              {"content_length": 1}, chunks)
+            self.assertRaises(
+                exceptions.ClientReadTimeout, api._put_stream, self.account,
+                self.container, name, src, {"content_length": 1}, chunks)
