@@ -1,12 +1,20 @@
 language: python
 python: 2.7
 env:
-  - TOX_ENV=pep8
-  - TOX_ENV=py27
+- TOX_ENV=pep8
+- TOX_ENV=py27
 install:
-  - pip install --upgrade pip setuptools tox virtualenv
+- pip install --upgrade pip setuptools tox virtualenv
 script:
-  - tox -v -v -e $TOX_ENV
+- tox -v -v -e $TOX_ENV
 after_failure:
-  - for LOG in .tox/$TOX_ENV/log/*; do echo "$LOG\n"; cat "$LOG"; echo "\n\n"; done
-  - echo "pip.log\n"; cat $HOME/.pip/pip.log
+- for LOG in .tox/$TOX_ENV/log/*; do echo "$LOG\n"; cat "$LOG"; echo "\n\n"; done
+- echo "pip.log\n"; cat $HOME/.pip/pip.log
+deploy:
+  provider: pypi
+  user: openio
+  password:
+    secure: Aacv0YE56suKTEFmRWN5v/1iiymUTlCJt82pyCYBbnC4CbBD22vevbAzPYr6gKe51xE8YOxPj8QaFr6sWiaUSjsN+Vv0bf89Z8roJ8WrpFXO+9M16f/SX1bPhLzxutbpHWCdnCPfp5ovD5mrsodc55xFRsXLsKlpKEt0TVZtOH0H13+hmmdYhL1W0jeV4kyIegkP35Za5u9CZFm9Ujp1dYAI0eiJBkjeOV7y5w+Ey8VEEznr0KFCGQ0t9cyytST99awIqSWZ6YybZmEPc/2RtyERudDlFg4jELqJSo4w5KwLGA50uwHONmpAFsMsJUAV1612jOz+cBlwVApN/t5K1IQCyxXjbXS51a2CzhlTIt5M+s+1L2B0VyWOwCKGAFZZlX/lC36xNb6vcju1TDupXbk9L4F2lDXrrjVl+uzG6MTs19bpOxNSbM91KmMHRGgwKgAKUBC7NaqwGOYt8xFiJBT7ag0o1647Eekd34JGl3MJBOvfAq0GdoXHmGt0nKtcTmsA0NaNWTxUdMjaZPZYoEN6CUdKbtmVXX3nq+bf2y8b126l/2WbSmD3xQfXv94041PLKzV6zUnWvKcwHyMfHsaGwFr037mq6C2W+xs0FO5VVLC21qHR2I7LOfJYryN29z5q4gSVao/79DSN6zjsz+ZqKNmgm4w3/7lkJGD3YXY=
+  on:
+    tags: true
+    repo: open-io/oiopy
