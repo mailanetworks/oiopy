@@ -128,7 +128,7 @@ You can also delete a property by specifying its key and using the `user.` prefi
 
 ### List objects
 
-    [openio@openio ~]# openio object list my_container
+    # openio object list my_container
 
     +----------+------+----------------------------------+
     | Name     | Size | Hash                             |
@@ -173,9 +173,9 @@ You can list all the objects :
 
 Let's use the paginating features:
 
-    # openio object list my_container --limit 3 --marker e
-
 This only outputs a maximum of three objects whose names are lexically greater than `e`:
+
+    # openio object list my_container --limit 3 --marker e
 
     +----------+------+----------------------------------+
     | Name     | Size | Hash                             |
@@ -185,9 +185,9 @@ This only outputs a maximum of three objects whose names are lexically greater t
     | folder_1 |    0 | D41D8CD98F00B204E9800998ECF8427E |
     +----------+------+----------------------------------+
 
-    # openio object list my_container --prefix file
-
 This only outputs the objects whose names begin with `file`:
+
+    # openio object list my_container --prefix file
 
     +-------+------+----------------------------------+
     | Name  | Size | Hash                             |
@@ -196,9 +196,9 @@ This only outputs the objects whose names begin with `file`:
     | file2 |    0 | D41D8CD98F00B204E9800998ECF8427E |
     +-------+------+----------------------------------+
 
-    # openio object list my_container --delimiter _
-
 This excludes all the objects whose names contain a `_` character:
+
+    # openio object list my_container --delimiter _
 
     +----------+------+----------------------------------+
     | Name     | Size | Hash                             |
@@ -210,9 +210,9 @@ This excludes all the objects whose names contain a `_` character:
     | test.txt |   14 | 9EB03B6E836CEAE565BA79F76C821DDA |
     +----------+------+----------------------------------+
 
-    # openio object list my_container --prefix folder_ --delimiter _
-
 This collects all the objects whose names begin with `folder_`, and then excludes all those whose names contain a `_` character after the prefix:
+
+    # openio object list my_container --prefix folder_ --delimiter _
 
     +----------+------+----------------------------------+
     | Name     | Size | Hash                             |
@@ -289,7 +289,7 @@ You can also delete a property by specifying its key:
 
     # openio container delete my_container
 
-### Note : It is not possible to delete a non empty container.
+Note : It is not possible to delete a non empty container.
 
 Indeed, the previous command raised the following error :
 
