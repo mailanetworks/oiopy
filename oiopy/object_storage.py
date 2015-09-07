@@ -120,13 +120,20 @@ def _sort_chunks(raw_chunks, rain_security):
 
 def _make_object_metadata(headers):
     meta = {}
+    props = {}
+
     prefix = OBJECT_METADATA_PREFIX
 
     for k, v in headers.iteritems():
         k = k.lower()
         if k.startswith(prefix):
             key = k.replace(prefix, "")
-            meta[key] = v
+            # TODO temporary workaround
+            if key.startswith('x-'):
+                props[key[2:]] = v
+            else:
+                meta[key] = v
+    meta['properties'] = props
     return meta
 
 
@@ -176,11 +183,16 @@ class ObjectStorageAPI(API):
     def account_del_properties(self, account, properties, headers={}):
         self.account_update(account, None, properties, headers=headers)
 
-    def container_create(self, account, container, headers={}):
+    def container_create(self, account, container, metadata=None, headers={}):
         uri = self._make_uri('container/create')
         params = self._make_params(account, container)
 
         headers['x-oio-action-mode'] = 'autocreate'
+        if metadata:
+            headers_meta = {}
+            for k, v in metadata.iteritems():
+                headers_meta['%suser-%s' % (CONTAINER_METADATA_PREFIX, k)] = v
+            headers.update(headers_meta)
         resp, resp_body = self._request(
             'POST', uri, params=params, headers=headers)
         if resp.status_code not in (204, 201):
@@ -298,14 +310,16 @@ class ObjectStorageAPI(API):
         if src is data:
             return self._object_create(
                 account, container, obj_name, StringIO(data), sysmeta,
-                headers=headers)
+                metadata=metadata, headers=headers)
         elif hasattr(file_or_path, "read"):
             return self._object_create(
-                account, container, obj_name, src, sysmeta, headers=headers)
+                account, container, obj_name, src, sysmeta, metadata=metadata,
+                headers=headers)
         else:
             with open(file_or_path, "rb") as f:
                 return self._object_create(
-                    account, container, obj_name, f, sysmeta, headers=headers)
+                    account, container, obj_name, f, sysmeta,
+                    metadata=metadata, headers=headers)
 
     @handle_object_not_found
     def object_delete(self, account, container, obj, headers={}):
@@ -317,7 +331,7 @@ class ObjectStorageAPI(API):
     @handle_container_not_found
     def object_list(self, account, container, limit=None, marker=None,
                     delimiter=None, prefix=None, end_marker=None,
-                    headers={}):
+                    include_metadata=False, headers={}):
         uri = self._make_uri('container/list')
         params = self._make_params(account, container)
         d = {"max": limit,
@@ -329,6 +343,13 @@ class ObjectStorageAPI(API):
 
         resp, resp_body = self._request(
             'GET', uri, params=params, headers=headers)
+
+        if include_metadata:
+            metadata = {}
+            for k, v in resp.headers.iteritems():
+                if k.startswith('%suser-' % CONTAINER_METADATA_PREFIX):
+                    metadata[k[len(CONTAINER_METADATA_PREFIX + 'user-'):]] = v
+            return metadata, resp_body
 
         return resp_body
 
@@ -357,8 +378,6 @@ class ObjectStorageAPI(API):
             'POST', uri, params=params, headers=headers)
 
         meta = _make_object_metadata(resp.headers)
-        for k, v in resp_body.iteritems():
-            meta[k] = v
         meta['properties'] = resp_body
         return meta
 
@@ -421,7 +440,7 @@ class ObjectStorageAPI(API):
         return resp, resp_body
 
     def _object_create(self, account, container, obj_name, src,
-                       sysmeta, headers={}):
+                       sysmeta, metadata=None, headers={}):
         uri = self._make_uri('content/prepare')
         params = self._make_params(account, container, obj_name)
         args = {'size': sysmeta['content_length']}
@@ -446,6 +465,9 @@ class ObjectStorageAPI(API):
         headers = {"x-oio-content-meta-length": bytes_transferred,
                    "x-oio-content-meta-hash": sysmeta['etag'],
                    "content-type": sysmeta['content_type']}
+        if metadata:
+            for k, v in metadata.iteritems():
+                headers['%sx-%s' % (OBJECT_METADATA_PREFIX, k)] = v
 
         uri = self._make_uri('content/create')
         data = json.dumps(final_chunks)
