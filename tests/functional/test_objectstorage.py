@@ -97,7 +97,7 @@ class TestObjectStorageFunctional(FunctionalTestCase):
                                    self.object_name, meta)
         rmeta = self.storage.object_show(self.account, self.container_name,
                                          self.object_name)
-        self.assertEqual(rmeta.get(key), value)
+        self.assertEqual(rmeta['properties'].get(key), value)
         key2 = utils.random_string()
         value2 = utils.random_string()
         meta2 = {key2: value2}
@@ -105,8 +105,8 @@ class TestObjectStorageFunctional(FunctionalTestCase):
                                    self.object_name, meta2, clear=True)
         rmeta = self.storage.object_show(self.account, self.container_name,
                                          self.object_name)
-        self.assertEqual(rmeta.get(key), None)
-        self.assertEqual(rmeta.get(key2), value2)
+        self.assertEqual(rmeta['properties'].get(key), None)
+        self.assertEqual(rmeta['properties'].get(key2), value2)
         self.assertEqual(rmeta.get("name"), self.object_name)
         self.assertEqual(rmeta.get("hash"), self.hash_data)
         self.assertEqual(rmeta.get("length"), "40")

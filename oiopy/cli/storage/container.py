@@ -68,10 +68,14 @@ class SetContainer(command.Command):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
+        properties = {}
+        for k, v in parsed_args.property.iteritems():
+            properties['user.%s' % k] = v
+
         self.app.client_manager.storage.container_set_properties(
             self.app.client_manager.get_account(),
             parsed_args.container,
-            parsed_args.property,
+            properties,
             clear=parsed_args.clear
         )
 
@@ -223,10 +227,14 @@ class UnsetContainer(command.Command):
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
+        properties = []
+        for p in parsed_args.property:
+            properties.append('user.%s' % p)
+
         self.app.client_manager.storage.container_del_properties(
             self.app.client_manager.get_account(),
             parsed_args.container,
-            parsed_args.property)
+            properties)
 
 
 class SaveContainer(command.Command):
