@@ -269,3 +269,42 @@ class SaveContainer(command.Command):
             with open(obj_name, 'wb') as f:
                 for chunk in stream:
                     f.write(chunk)
+
+
+class AnalyzeContainer(show.ShowOne):
+    """Analyze container"""
+
+    log = logging.getLogger(__name__ + '.AnalyzeContainer')
+
+    def get_parser(self, prog_name):
+        parser = super(AnalyzeContainer, self).get_parser(prog_name)
+        parser.add_argument(
+            'container',
+            metavar='<container>',
+            help='Container to show'
+        )
+
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        account = self.app.client_manager.get_account()
+        container = parsed_args.container
+
+        data = self.app.client_manager.storage.container_show(
+            account, container)
+
+        data_dir = self.app.client_manager.directory.get(
+            account, container)
+
+        info = {'account': data['sys.account'],
+                'base_name': data['sys.name'],
+                'name': data['sys.user.name'],
+                'meta2': []}
+        for d in data_dir['srv']:
+            if d['type'] == 'meta2':
+                info['meta2'].append(d['host'])
+
+        info['meta2'] = ', '.join(s for s in info['meta2'])
+        return zip(*sorted(info.iteritems()))

@@ -333,3 +333,42 @@ class UnsetObject(command.Command):
             container,
             obj,
             properties)
+
+
+class AnalyzeObject(lister.Lister):
+    """Analyze object"""
+
+    log = logging.getLogger(__name__ + '.AnalyzeObject')
+
+    def get_parser(self, prog_name):
+        parser = super(AnalyzeObject, self).get_parser(prog_name)
+        parser.add_argument(
+            'container',
+            metavar='<container>',
+            help='Container'
+        )
+        parser.add_argument(
+            'object',
+            metavar='<object>',
+            help='Object'
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        account = self.app.client_manager.get_account()
+        container = parsed_args.container
+        obj = parsed_args.object
+
+        data = self.app.client_manager.storage.object_analyze(
+            account,
+            container,
+            obj)
+
+        def sort_chunk_pos(c):
+            return int(c[0].split('.', 1)[0])
+
+        l = ((c['pos'], c['url'], c['size'], c['hash']) for c in data[1])
+        columns = ('Pos', 'Id', 'Size', 'Hash')
+        return columns, sorted(l, key=sort_chunk_pos)

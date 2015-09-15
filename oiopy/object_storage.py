@@ -354,20 +354,23 @@ class ObjectStorageAPI(API):
         return resp_body
 
     @handle_object_not_found
-    def object_fetch(self, account, container, obj, size=None, offset=0,
-                     headers={}):
+    def object_analyze(self, account, container, obj, headers={}):
         uri = self._make_uri('content/show')
         params = self._make_params(account, container, obj)
         resp, resp_body = self._request(
             'GET', uri, params=params, headers=headers)
-
         meta = _make_object_metadata(resp.headers)
         raw_chunks = resp_body
+        return meta, raw_chunks
 
+    def object_fetch(self, account, container, obj, size=None, offset=0,
+                     headers={}):
+        meta, raw_chunks = self.object_analyze(
+            account, container, obj, headers=headers)
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
         chunks = _sort_chunks(raw_chunks, rain_security)
-        stream = self._fetch_stream(meta, chunks, rain_security, size, offset,
-                                    headers=headers)
+        stream = self._fetch_stream(
+            meta, chunks, rain_security, size, offset, headers=headers)
         return meta, stream
 
     @handle_object_not_found
