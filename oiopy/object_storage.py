@@ -630,6 +630,13 @@ class ObjectStorageAPI(API):
                 current_offset += chunk_size
 
 
+def close_source(source):
+    try:
+        source.conn.close()
+    except Exception:
+        pass
+
+
 class ChunkDownloadHandler(object):
     def __init__(self, chunks, size, offset, headers={}):
         self.chunks = chunks
@@ -674,12 +681,12 @@ class ChunkDownloadHandler(object):
                 source = conn.getresponse(True)
                 source.conn = conn
 
-            except Exception:
+            except (Timeout, Exception):
                 self.failed_chunks.append(chunk)
                 continue
             if source.status not in (200, 206):
                 self.failed_chunks.append(chunk)
-                source.conn.close()
+                close_source(source)
                 source = None
             else:
                 break
@@ -691,13 +698,14 @@ class ChunkDownloadHandler(object):
         try:
             while True:
                 try:
-                    data = source.read(READ_CHUNK_SIZE)
-                    bytes_read += len(data)
+                    with ChunkReadTimeout(CHUNK_TIMEOUT):
+                        data = source.read(READ_CHUNK_SIZE)
+                        bytes_read += len(data)
                 except ChunkReadTimeout:
                     self._fast_forward(bytes_read)
                     new_source = self._get_chunk_source()
                     if new_source:
-                        source.conn.close()
+                        close_source(source)
                         source = new_source
                         bytes_read = 0
                         continue
@@ -716,4 +724,4 @@ class ChunkDownloadHandler(object):
             # error
             raise
         finally:
-            source.conn.close()
+            close_source(source)

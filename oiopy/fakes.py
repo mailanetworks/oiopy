@@ -34,7 +34,7 @@ class FakeSession(requests.Session):
 
 def fake_http_connect(*status_iter, **kwargs):
     class FakeConn(object):
-        def __init__(self, status):
+        def __init__(self, status, body=''):
             if isinstance(status, (Exception, Timeout)):
                 raise status
             if isinstance(status, tuple):
@@ -42,7 +42,9 @@ def fake_http_connect(*status_iter, **kwargs):
             else:
                 self.expect_status, self.status = (None, status)
 
-        def getresponse(self):
+            self.body = body
+
+        def getresponse(self, amt=None):
             if isinstance(self.status, (Exception, Timeout)):
                 raise self.status
             return self
@@ -50,8 +52,10 @@ def fake_http_connect(*status_iter, **kwargs):
         def getheaders(self):
             pass
 
-        def read(self):
-            pass
+        def read(self, size=None):
+            resp = self.body[:size]
+            self.body = self.body[size:]
+            return resp
 
         def send(self, data):
             pass
@@ -59,14 +63,14 @@ def fake_http_connect(*status_iter, **kwargs):
         def close(self):
             pass
 
+    body = kwargs.get('body', None)
     status_iter = iter(status_iter)
 
     def connect(*args, **ckwargs):
         if kwargs.get("slow_connect", False):
             sleep(1)
         status = status_iter.next()
-
-        return FakeConn(status)
+        return FakeConn(status, body=body)
 
     connect.status_iter = status_iter
 
