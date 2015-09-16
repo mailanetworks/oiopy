@@ -1,6 +1,12 @@
 Release History
 ===============
 
+0.5.3 (2015-09-16)
+------------------
+
+* CLI: info command
+* Better object fetch resume on failure
+
 0.5.2 (2015-09-14)
 ------------------
 
