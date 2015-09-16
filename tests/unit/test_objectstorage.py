@@ -507,8 +507,8 @@ class TestChunkDownloadHandler(unittest.TestCase):
             parts = list(stream)
         self.assertEqual(parts, ['foo', 'bar'])
         h._fast_forward.assert_called_once_with(len('foo'))
-        mock_close.assert_any(source)
-        mock_close.assert_any(source2)
+        mock_close.assert_any_call(source)
+        mock_close.assert_any_call(source2)
         self.assertEqual(mock_close.call_count, 2)
 
     @patch('oiopy.object_storage.close_source')
