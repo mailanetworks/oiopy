@@ -302,3 +302,41 @@ class UnsetReference(command.Command):
             self.app.client_manager.get_account(),
             parsed_args.reference,
             parsed_args.property)
+
+
+class AnalyzeReference(show.ShowOne):
+    """Analyze reference"""
+
+    log = logging.getLogger(__name__ + '.AnalyzeReference')
+
+    def get_parser(self, prog_name):
+        parser = super(AnalyzeReference, self).get_parser(prog_name)
+        parser.add_argument(
+            'reference',
+            metavar='<reference>',
+            help='Reference to analyze')
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        account = self.app.client_manager.get_account()
+        reference = parsed_args.reference
+
+        data = self.app.client_manager.directory.get(
+            account, reference)
+
+        info = {'account': account,
+                'name': reference,
+                'meta0': [],
+                'meta1': []}
+        for d in data['dir']:
+            if d['type'] == 'meta0':
+                info['meta0'].append(d['host'])
+            elif d['type'] == 'meta1':
+                info['meta1'].append(d['host'])
+
+        for srv_type in ['meta0', 'meta1']:
+            info[srv_type] = ', '.join(h for h in info[srv_type])
+
+        return zip(*sorted(info.iteritems()))
