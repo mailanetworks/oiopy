@@ -1,7 +1,9 @@
+from eventlet import Timeout
 from contextlib import contextmanager
 from cStringIO import StringIO
 import json
 from mock import MagicMock as Mock
+from mock import patch
 import random
 import unittest
 
@@ -15,6 +17,8 @@ from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
 from oiopy.object_storage import object_headers
 from oiopy.object_storage import _sort_chunks
+from oiopy.object_storage import ChunkDownloadHandler
+from oiopy.object_storage import ChunkReadTimeout
 
 
 @contextmanager
@@ -443,3 +447,99 @@ class ObjectStorageTest(unittest.TestCase):
             self.assertRaises(
                 exceptions.ClientReadTimeout, api._put_stream, self.account,
                 self.container, name, src, {"content_length": 1}, chunks)
+
+
+class TestSource(object):
+    def __init__(self, parts):
+        self.parts = list(parts)
+
+    def read(self, chunk_size):
+        if self.parts:
+            part = self.parts.pop(0)
+            if part is None:
+                raise ChunkReadTimeout()
+            else:
+                return part
+        else:
+            return ''
+
+
+class TestChunkDownloadHandler(unittest.TestCase):
+    def setUp(self):
+        super(TestChunkDownloadHandler, self).setUp()
+        self.chunks = [
+            {'url': 'http://1.2.3.4:6000/AAAA', 'pos': '0', 'size': 32},
+            {'url': 'http://1.2.3.4:6000/AAAA', 'pos': '0', 'size': 32}]
+        self.size = 32
+        self.offset = 0
+        self.handler = ChunkDownloadHandler(
+            self.chunks, self.size, self.offset)
+
+    @patch('oiopy.object_storage.close_source')
+    @patch('oiopy.object_storage.ChunkDownloadHandler._get_chunk_source')
+    def test_get_stream(self, mock_chunk_source, mock_close):
+        parts = ('foo', 'bar')
+        source = TestSource(parts)
+        mock_chunk_source.return_value = source
+
+        stream = self.handler.get_stream()
+
+        d = ''.join(stream)
+        self.assertTrue(d, 'foobar')
+        mock_close.assert_called_once_with(source)
+
+    @patch('oiopy.object_storage.close_source')
+    def test_make_stream(self, mock_close):
+        source = TestSource(('foo', 'bar'))
+        stream = self.handler._make_stream(source)
+        d = ''.join(stream)
+        self.assertTrue(d, 'foobar')
+        mock_close.assert_called_once_with(source)
+
+    @patch('oiopy.object_storage.close_source')
+    def test_make_stream_timeout(self, mock_close):
+        h = self.handler
+        source = TestSource(('foo', None))
+        source2 = TestSource(('bar',))
+        h._fast_forward = Mock()
+        stream = h._make_stream(source)
+        with patch.object(h, '_get_chunk_source', lambda: source2):
+            parts = list(stream)
+        self.assertEqual(parts, ['foo', 'bar'])
+        h._fast_forward.assert_called_once_with(len('foo'))
+        mock_close.assert_any_call(source)
+        mock_close.assert_any_call(source2)
+        self.assertEqual(mock_close.call_count, 2)
+
+    @patch('oiopy.object_storage.close_source')
+    def test_make_stream_timeout_resume_failure(self, mock_close):
+        h = self.handler
+        source = TestSource(('foo', None))
+        h._fast_forward = Mock()
+        stream = h._make_stream(source)
+        with patch.object(h, '_get_chunk_source', lambda: None):
+            self.assertEqual('foo', next(stream))
+            with self.assertRaises(ChunkReadTimeout):
+                next(stream)
+        h._fast_forward.assert_called_once_with(len('foo'))
+        mock_close.assert_called_once_with(source)
+
+    def test_get_chunk_source(self):
+        with set_http_connect(200, body='foobar'):
+            source = self.handler._get_chunk_source()
+        self.assertEqual('foobar', source.read())
+
+    def test_get_chunk_source_resume_timeout(self):
+        h = self.handler
+        with set_http_connect(Timeout(), 200, body='foobar'):
+            source = h._get_chunk_source()
+        self.assertEqual('foobar', source.read())
+        self.assertEqual(h.failed_chunks, [self.chunks[0]])
+
+    def test_get_chunk_source_resume_404(self):
+        h = self.handler
+        with set_http_connect(404, 200, body='foobar'):
+            source = h._get_chunk_source()
+
+        self.assertEqual('foobar', source.read())
+        self.assertEqual(h.failed_chunks, [self.chunks[0]])
