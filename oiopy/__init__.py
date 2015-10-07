@@ -1,11 +1,11 @@
-
-__all__ = ['__version__']
-
-import pbr.version
-
-version_info = pbr.version.VersionInfo('oiopy')
+import pkg_resources
 
 try:
-    __version__ = version_info.version_string()
-except AttributeError:
-    __version__ = None
+    __version__ = __canonical_version__ = pkg_resources.get_provider(
+        pkg_resources.Requirement.parse('oiopy')).version
+except pkg_resources.DistributionNotFound:
+
+    import pbr.version
+    _version_info = pbr.version.VersionInfo('oiopy')
+    __version__ = _version_info.release_string()
+    __canonical_version__ = _version_info.version_string()
