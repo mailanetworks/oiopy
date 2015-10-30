@@ -8,6 +8,10 @@ Python API for OpenIO SDS.
 
 Contents
 --------
+
+The official `openio` CLI
+Documentation is available [here](https://github.com/open-io/oiopy/blob/master/docs/cli.md)
+
 Included APIs:
 *   Object Storage API 
 *   Directory API
@@ -24,6 +28,10 @@ You can install directly from trunk on GitHub:
 Download and install from source by running:
 
     python setup.py install
+
+`oiopy` is also available on PyPI:
+	
+    pip install oiopy
 
 Updates
 -------
