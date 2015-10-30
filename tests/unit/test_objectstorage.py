@@ -469,7 +469,7 @@ class TestChunkDownloadHandler(unittest.TestCase):
         super(TestChunkDownloadHandler, self).setUp()
         self.chunks = [
             {'url': 'http://1.2.3.4:6000/AAAA', 'pos': '0', 'size': 32},
-            {'url': 'http://1.2.3.4:6000/AAAA', 'pos': '0', 'size': 32}]
+            {'url': 'http://1.2.3.4:6001/BBBB', 'pos': '0', 'size': 32}]
         self.size = 32
         self.offset = 0
         self.handler = ChunkDownloadHandler(
