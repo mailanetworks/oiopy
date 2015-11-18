@@ -582,7 +582,7 @@ class ObjectStorageAPI(API):
 
             final_chunks = []
             for conn in conns:
-                resp = conn.getresponse()
+                resp = conn.getresponse(True)
                 if resp.status in (200, 201):
                     conn.chunk["size"] = bytes_transferred
                     final_chunks.append(conn.chunk)
