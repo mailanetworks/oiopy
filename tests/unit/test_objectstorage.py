@@ -218,7 +218,7 @@ class ObjectStorageTest(unittest.TestCase):
         resp.headers = {object_headers["name"]: name,
                         object_headers["size"]: size,
                         object_headers["hash"]: content_hash,
-                        object_headers["content_type"]: content_type}
+                        object_headers["mime_type"]: content_type}
         api._request = Mock(return_value=(resp, {}))
         obj = api.object_show(
             self.account, self.container, name, headers=self.headers)
@@ -310,7 +310,10 @@ class ObjectStorageTest(unittest.TestCase):
             {"url": "http://1.2.3.4:6000/BBBB", "pos": "1", "size": 32},
             {"url": "http://1.2.3.4:6000/CCCC", "pos": "2", "size": 32}
         ]
-        api._request = Mock(return_value=(None, raw_chunks))
+        meta = {object_headers['id']: utils.random_string(),
+                object_headers['version']: utils.random_string()}
+        api._content_prepare = Mock(return_value=(meta, raw_chunks))
+        api._content_create = Mock(return_value=({}, {}))
         with set_http_connect(201, 201, 201):
             api.object_create(
                 self.account, self.container, obj_name=name, data="x",
@@ -378,11 +381,13 @@ class ObjectStorageTest(unittest.TestCase):
             ]
         }
         src = empty_stream()
+        sysmeta = {'content_length': 0,
+                   'id': utils.random_string(),
+                   'version': utils.random_string()}
 
         with set_http_connect(201, 201, 201):
             chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, {"content_length": 0},
-                chunks)
+                self.account, self.container, name, src, sysmeta, chunks)
 
         final_chunks = [
             {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
@@ -407,11 +412,13 @@ class ObjectStorageTest(unittest.TestCase):
             ]
         }
         src = empty_stream()
+        sysmeta = {'content_length': 0,
+                   'id': utils.random_string(),
+                   'version': utils.random_string()}
 
         with set_http_connect(201, Exception(), Exception()):
             chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, {"content_length": 0},
-                chunks)
+                self.account, self.container, name, src, sysmeta, chunks)
         self.assertEqual(len(chunks), 1)
         chunk = {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
                  "hash": "d41d8cd98f00b204e9800998ecf8427e"}
@@ -426,11 +433,13 @@ class ObjectStorageTest(unittest.TestCase):
             ]
         }
         src = empty_stream()
+        sysmeta = {'content_length': 0,
+                   'id': utils.random_string(),
+                   'version': utils.random_string()}
 
         with set_http_connect(200, slow_connect=True):
             chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, {"content_length": 0},
-                chunks)
+                self.account, self.container, name, src, sysmeta, chunks)
 
     def test_put_stream_client_timeout(self):
         api = self.api
@@ -442,11 +451,14 @@ class ObjectStorageTest(unittest.TestCase):
         }
 
         src = fakes.FakeTimeoutStream(5)
+        sysmeta = {'content_length': 0,
+                   'id': utils.random_string(),
+                   'version': utils.random_string()}
 
         with set_http_connect(200):
             self.assertRaises(
                 exceptions.ClientReadTimeout, api._put_stream, self.account,
-                self.container, name, src, {"content_length": 1}, chunks)
+                self.container, name, src, sysmeta, chunks)
 
 
 class TestSource(object):
