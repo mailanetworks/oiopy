@@ -51,9 +51,10 @@ container_headers = {
 
 object_headers = {
     "name": "%sname" % OBJECT_METADATA_PREFIX,
+    "id": "%sid" % OBJECT_METADATA_PREFIX,
     "policy": "%spolicy" % OBJECT_METADATA_PREFIX,
     "version": "%sversion" % OBJECT_METADATA_PREFIX,
-    "content_type": "%smime-type" % OBJECT_METADATA_PREFIX,
+    "mime_type": "%smime-type" % OBJECT_METADATA_PREFIX,
     "size": "%slength" % OBJECT_METADATA_PREFIX,
     "ctime": "%sctime" % OBJECT_METADATA_PREFIX,
     "hash": "%shash" % OBJECT_METADATA_PREFIX,
@@ -69,7 +70,9 @@ chunk_headers = {
     "content_size": "%scontent-size" % CHUNK_METADATA_PREFIX,
     "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
     "content_chunksnb": "%scontent-chunksnb" % CHUNK_METADATA_PREFIX,
-    "content_hash": "%scontent-hash" % CHUNK_METADATA_PREFIX
+    "content_hash": "%scontent-hash" % CHUNK_METADATA_PREFIX,
+    "content_id": "%scontent-id" % CHUNK_METADATA_PREFIX,
+    "content_version": "%scontent-version" % CHUNK_METADATA_PREFIX
 }
 
 
@@ -304,7 +307,7 @@ class ObjectStorageAPI(API):
         if content_length is None:
             raise exc.MissingContentLength()
 
-        sysmeta = {'content_type': content_type,
+        sysmeta = {'mime_type': content_type,
                    'content_encoding': content_encoding,
                    'content_length': content_length,
                    'etag': etag}
@@ -444,18 +447,35 @@ class ObjectStorageAPI(API):
                                         **kwargs)
         return resp, resp_body
 
-    def _object_create(self, account, container, obj_name, src,
-                       sysmeta, metadata=None, headers=None):
+    def _content_prepare(self, account, container, obj_name, size,
+                         headers=None):
         uri = self._make_uri('content/prepare')
         params = self._make_params(account, container, obj_name)
-        args = {'size': sysmeta['content_length']}
+        args = {'size': size}
         headers = headers or {}
         headers['x-oio-action-mode'] = 'autocreate'
         resp, resp_body = self._request(
             'POST', uri, data=json.dumps(args), params=params,
             headers=headers)
+        return resp.headers, resp_body
 
-        raw_chunks = resp_body
+    def _content_create(self, account, container, obj_name, final_chunks,
+                        headers=None):
+        uri = self._make_uri('content/create')
+        params = self._make_params(account, container, obj_name)
+        data = json.dumps(final_chunks)
+        resp, resp_body = self._request(
+            'POST', uri, data=data, params=params, headers=headers)
+        return resp.headers, resp_body
+
+    def _object_create(self, account, container, obj_name, src,
+                       sysmeta, metadata=None, headers=None):
+        meta, raw_chunks = self._content_prepare(
+            account, container, obj_name, sysmeta['content_length'],
+            headers=headers)
+
+        sysmeta['id'] = meta[object_headers['id']]
+        sysmeta['version'] = meta[object_headers['version']]
 
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
         if rain_security:
@@ -468,17 +488,19 @@ class ObjectStorageAPI(API):
 
         sysmeta['etag'] = content_checksum
 
-        headers = {"x-oio-content-meta-length": bytes_transferred,
-                   "x-oio-content-meta-hash": sysmeta['etag'],
-                   "content-type": sysmeta['content_type']}
+        hdrs = {}
+        hdrs[object_headers['size']] = bytes_transferred
+        hdrs[object_headers['hash']] = sysmeta['etag']
+        hdrs[object_headers['version']] = sysmeta['version']
+        hdrs[object_headers['id']] = sysmeta['id']
+        hdrs[object_headers['mime_type']] = sysmeta['mime_type']
+
         if metadata:
             for k, v in metadata.iteritems():
-                headers['%sx-%s' % (OBJECT_METADATA_PREFIX, k)] = v
+                hdrs['%sx-%s' % (OBJECT_METADATA_PREFIX, k)] = v
 
-        uri = self._make_uri('content/create')
-        data = json.dumps(final_chunks)
-        resp, resp_body = self._request(
-            'POST', uri, data=data, params=params, headers=headers)
+        m, body = self._content_create(account, container, obj_name,
+                                       final_chunks, headers=hdrs)
         return final_chunks, bytes_transferred, content_checksum
 
     def _put_stream(self, account, container, obj_name, src, sysmeta, chunks,
@@ -494,6 +516,8 @@ class ObjectStorageAPI(API):
                 chunk_path = parsed.path.split('/')[-1]
                 hdrs = {}
                 hdrs["transfer-encoding"] = "chunked"
+                hdrs[chunk_headers["content_id"]] = sysmeta['id']
+                hdrs[chunk_headers["content_version"]] = sysmeta['version']
                 hdrs[chunk_headers["content_path"]] = utils.quote(obj_name)
                 hdrs[chunk_headers["content_size"]] = sysmeta['content_length']
                 hdrs[chunk_headers["content_chunksnb"]] = len(chunks)
