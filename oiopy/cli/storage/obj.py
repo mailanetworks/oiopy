@@ -123,6 +123,8 @@ class ShowObject(show.ShowOne):
         info = {'account': account,
                 'container': container,
                 'object': obj,
+                'id': data['id'],
+                'version': data['version'],
                 'mime-type': data['mime-type'],
                 'size': data['length'],
                 'hash': data['hash'].lower(),
