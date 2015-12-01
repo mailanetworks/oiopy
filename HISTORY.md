@@ -1,6 +1,13 @@
 Release History
 ===============
 
+0.6.0 (2015-12-1)
+------------------
+
+* Handle content id and version
+* CLI: outputs content id and version
+* Better testing for download handler
+
 0.5.3 (2015-09-16)
 ------------------
 
