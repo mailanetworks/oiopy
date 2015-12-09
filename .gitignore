@@ -8,3 +8,6 @@ cover
 *.egg
 *.egg-info
 .tox
+
+# IDE
+.idea
