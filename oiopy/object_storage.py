@@ -429,9 +429,9 @@ class ObjectStorageAPI(API):
             params.update({'path': obj})
         return params
 
-    def _get_account_url(self):
+    def _get_service_url(self, srv_type):
         uri = self._make_uri('lb/choose')
-        params = {'pool': 'account'}
+        params = {'pool': srv_type}
         resp, resp_body = self._request('GET', uri, params=params)
         if resp.status_code == 200:
             instance_info = resp_body[0]
@@ -442,7 +442,7 @@ class ObjectStorageAPI(API):
             )
 
     def _account_request(self, method, uri, **kwargs):
-        account_url = self._get_account_url()
+        account_url = self._get_service_url('account')
         resp, resp_body = self._request(method, uri, endpoint=account_url,
                                         **kwargs)
         return resp, resp_body
@@ -476,15 +476,19 @@ class ObjectStorageAPI(API):
 
         sysmeta['id'] = meta[object_headers['id']]
         sysmeta['version'] = meta[object_headers['version']]
+        sysmeta['policy'] = meta[object_headers['policy']]
 
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
-        if rain_security:
-            raise exc.OioException('RAIN Security not supported.')
 
         chunks = _sort_chunks(raw_chunks, rain_security)
-        final_chunks, bytes_transferred, content_checksum = self._put_stream(
-            account, container, obj_name, src, sysmeta, chunks,
-            headers=headers)
+        if rain_security:
+            final_chunks, bytes_transferred, content_checksum = \
+                self._put_stream_rain(account, container, obj_name,
+                                      src, sysmeta, chunks, headers=headers)
+        else:
+            final_chunks, bytes_transferred, content_checksum = \
+                self._put_stream(account, container, obj_name, src,
+                                 sysmeta, chunks, headers=headers)
 
         sysmeta['etag'] = content_checksum
 
@@ -494,6 +498,7 @@ class ObjectStorageAPI(API):
         hdrs[object_headers['version']] = sysmeta['version']
         hdrs[object_headers['id']] = sysmeta['id']
         hdrs[object_headers['mime_type']] = sysmeta['mime_type']
+        hdrs[object_headers['policy']] = sysmeta['policy']
 
         if metadata:
             for k, v in metadata.iteritems():
@@ -634,30 +639,119 @@ class ObjectStorageAPI(API):
         if size is None:
             size = int(meta["length"])
         if rain_security:
-            raise exc.OioException("RAIN not supported")
-        else:
+            # Quick hack to allow the download of rainx content without
+            # managing the chunk rebuilding
+            chunks_to_read = {}
+            i = 0
             for pos in range(len(chunks)):
-                chunk_size = int(chunks[pos][0]["size"])
-                if total_bytes >= size:
-                    break
-                if current_offset + chunk_size > offset:
-                    if current_offset < offset:
-                        _offset = offset - current_offset
-                    else:
-                        _offset = 0
-                    if chunk_size + total_bytes > size:
-                        _size = size - total_bytes
-                    else:
-                        _size = chunk_size
+                for subpos in range(len(chunks[pos])):
+                    if str(subpos) not in chunks[pos]:
+                        break  # ignore parity chunks
+                    chunks_to_read[i] = [chunks[pos][str(subpos)]]
+                    i += 1
+            chunks = chunks_to_read
 
-                    handler = ChunkDownloadHandler(chunks[pos], _size, _offset)
-                    stream = handler.get_stream()
-                    if not stream:
-                        raise exc.OioException("Error while downloading")
-                    for s in stream:
-                        total_bytes += len(s)
-                        yield s
-                current_offset += chunk_size
+        for pos in range(len(chunks)):
+            chunk_size = int(chunks[pos][0]["size"])
+            if total_bytes >= size:
+                break
+            if current_offset + chunk_size > offset:
+                if current_offset < offset:
+                    _offset = offset - current_offset
+                else:
+                    _offset = 0
+                if chunk_size + total_bytes > size:
+                    _size = size - total_bytes
+                else:
+                    _size = chunk_size
+
+                handler = ChunkDownloadHandler(chunks[pos],
+                                               _size, _offset)
+                stream = handler.get_stream()
+                if not stream:
+                    raise exc.OioException("Error while downloading")
+                for s in stream:
+                    total_bytes += len(s)
+                    yield s
+            current_offset += chunk_size
+
+    def _put_stream_rain(self, account, container, obj_name, src, sysmeta,
+                         chunks, headers=None):
+        global_checksum = hashlib.md5()
+        total_bytes_transferred = 0
+        content_chunks = []
+        content_length = sysmeta['content_length']
+
+        def _encode_rawxlist(chunks_at_pos):
+            res_chunks = []
+            for subpos, c in chunks_at_pos.iteritems():
+                host = c['url'].split('/')[2]
+                chunk_id = c['url'].split('/')[-1]
+                res_chunks.append("%s/%s" % (host, chunk_id))
+            return '|'.join(res_chunks)
+
+        def _limit_stream(stream, size):
+            read_size = 0
+            while read_size < size:
+                to_read = size - read_size
+                if to_read > WRITE_CHUNK_SIZE:
+                    to_read = WRITE_CHUNK_SIZE
+                data = stream.read(to_read)
+                global_checksum.update(data)
+                read_size += to_read
+                yield data
+
+        def _decode_chunklist(chunklist):
+            res = []
+            for c in chunklist.split(';'):
+                pos, url, size, hash = c.split('|')
+                res.append({
+                    "url": "http://%s" % url,
+                    "pos": pos,
+                    "size": int(size),
+                    "hash": hash
+                })
+            return res
+
+        if content_length == 0:
+            # TODO special case
+            raise exc.OioException("Empty content not supported by rainx")
+
+        for pos in xrange(len(chunks)):
+            rainx_url = self._get_service_url("rainx")
+
+            chunk_size = chunks[pos][str(0)]['size']
+            remaining_bytes = content_length - total_bytes_transferred
+            if chunk_size > remaining_bytes:
+                chunk_size = remaining_bytes
+
+            headers = {}
+            headers["X-oio-chunk-meta-content-storagepolicy"] = \
+                sysmeta['policy']
+            headers["X-oio-chunk-meta-rawxlist"] = \
+                _encode_rawxlist(chunks[pos])
+            headers[chunk_headers["content_id"]] = sysmeta['id']
+            headers[chunk_headers["content_version"]] = sysmeta['version']
+            headers[chunk_headers["content_path"]] = utils.quote(obj_name)
+            headers[chunk_headers["content_size"]] = sysmeta['content_length']
+            headers[chunk_headers["content_chunksnb"]] = len(chunks)
+            headers[chunk_headers["container_id"]] = \
+                utils.name2cid(account, container)
+            headers[chunk_headers["chunk_pos"]] = pos
+            headers[chunk_headers["chunk_size"]] = chunk_size
+
+            resp = self.session.put(rainx_url,
+                                    data=_limit_stream(src, chunk_size),
+                                    headers=headers)
+            resp.raise_for_status()
+
+            content_chunks.extend(_decode_chunklist(resp.headers['chunklist']))
+
+            total_bytes_transferred += chunk_size
+
+        content_checksum = global_checksum.hexdigest()
+
+        return content_chunks, total_bytes_transferred, content_checksum
 
 
 def close_source(source):

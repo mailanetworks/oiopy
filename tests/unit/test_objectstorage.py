@@ -78,7 +78,7 @@ class ObjectStorageTest(unittest.TestCase):
         limit = random.randint(1, 1000)
         body = {"listing": [[name, 0, 0, 0]]}
         self.api._request = Mock(return_value=(resp, body))
-        self.api._get_account_url = Mock(return_value='fake_endpoint')
+        self.api._get_service_url = Mock(return_value='fake_endpoint')
         containers, meta = self.api.container_list(
             self.account, limit=limit, marker=marker, prefix=prefix,
             delimiter=delimiter, end_marker=end_marker, headers=self.headers)
@@ -311,7 +311,8 @@ class ObjectStorageTest(unittest.TestCase):
             {"url": "http://1.2.3.4:6000/CCCC", "pos": "2", "size": 32}
         ]
         meta = {object_headers['id']: utils.random_string(),
-                object_headers['version']: utils.random_string()}
+                object_headers['version']: utils.random_string(),
+                object_headers['policy']: utils.random_string()}
         api._content_prepare = Mock(return_value=(meta, raw_chunks))
         api._content_create = Mock(return_value=({}, {}))
         with set_http_connect(201, 201, 201):
@@ -459,6 +460,91 @@ class ObjectStorageTest(unittest.TestCase):
             self.assertRaises(
                 exceptions.ClientReadTimeout, api._put_stream, self.account,
                 self.container, name, src, sysmeta, chunks)
+
+    def test_rain_put_stream_empty(self):
+        api = self.api
+        name = utils.random_string()
+        chunks = {
+            0: {
+                "0": {"url": "http://1.2.3.4:6000/AAAA",
+                      "pos": "0.0",
+                      "size": 32,
+                      "hash": "00000000000000000000000000000000"}
+            }
+        }
+        src = empty_stream()
+        sysmeta = {'content_length': 0,
+                   'id': utils.random_string(),
+                   'version': utils.random_string(),
+                   'policy': utils.random_string()}
+
+        self.assertRaises(exceptions.OioException, api._put_stream_rain,
+                          self.account, self.container, name, src,
+                          sysmeta, chunks)
+
+    def test_rain_put_stream(self):
+        chunks = {
+            0: {
+                "0": {
+                    "url": "http://1.2.3.4:6000/AAAA", "pos": "0.0",
+                    "size": 32, "hash": "00000000000000000000000000000000"},
+                "1": {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1",
+                      "size": 32, "hash": "00000000000000000000000000000000"},
+                "p0": {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0",
+                       "size": 32, "hash": "00000000000000000000000000000000"}
+            }
+        }
+        src = StringIO("azerty")
+        sysmeta = {'content_length': 6,
+                   'id': "myid",
+                   'version': "1234",
+                   'policy': "RaIn"}
+
+        put_resp = Mock()
+        put_resp.headers = {
+            "chunklist":
+                "0.0|1.2.3.4:6000/AAAA|4|00000000000000000000000000000011;"
+                "0.1|1.2.3.4:6000/BBBB|2|00000000000000000000000000000022;"
+                "0.p0|1.2.3.4:6000/CCCC|3|00000000000000000000000000000033"
+        }
+
+        def fake_put(url, data, headers):
+            self.assertEqual(url, "fake_endpoint")
+            all_data = ""
+            for d in data:
+                all_data += d
+            self.assertEqual(all_data, "azerty")
+            return put_resp
+
+        self.api.session.put = fake_put
+        self.api._get_service_url = Mock(return_value='fake_endpoint')
+
+        chunks, bytes_transferred, content_checksum = \
+            self.api._put_stream_rain("myaccount", "mycontainer",
+                                      "mycontent", src, sysmeta, chunks)
+
+        self.assertEqual(bytes_transferred, 6)
+        self.assertEqual(content_checksum, "ab4f63f9ac65152575886860dde480a1")
+        self.assertEqual(chunks, [
+            {
+                "url": "http://1.2.3.4:6000/AAAA",
+                "hash": "00000000000000000000000000000011",
+                "pos": "0.0",
+                "size": 4
+            },
+            {
+                "url": "http://1.2.3.4:6000/BBBB",
+                "hash": "00000000000000000000000000000022",
+                "pos": "0.1",
+                "size": 2
+            },
+            {
+                "url": "http://1.2.3.4:6000/CCCC",
+                "hash": "00000000000000000000000000000033",
+                "pos": "0.p0",
+                "size": 3
+            },
+        ])
 
 
 class TestSource(object):
