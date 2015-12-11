@@ -477,6 +477,7 @@ class ObjectStorageAPI(API):
         sysmeta['id'] = meta[object_headers['id']]
         sysmeta['version'] = meta[object_headers['version']]
         sysmeta['policy'] = meta[object_headers['policy']]
+        sysmeta['chunk_method'] = meta[object_headers['chunk_method']]
 
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
 
@@ -499,6 +500,7 @@ class ObjectStorageAPI(API):
         hdrs[object_headers['id']] = sysmeta['id']
         hdrs[object_headers['mime_type']] = sysmeta['mime_type']
         hdrs[object_headers['policy']] = sysmeta['policy']
+        hdrs[object_headers['chunk_method']] = sysmeta['chunk_method']
 
         if metadata:
             for k, v in metadata.iteritems():
