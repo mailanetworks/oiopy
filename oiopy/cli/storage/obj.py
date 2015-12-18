@@ -27,12 +27,18 @@ class CreateObject(lister.Lister):
             nargs='+',
             help='Local filename(s) to upload'
         )
+        parser.add_argument(
+            '--policy',
+            metavar='<policy>',
+            help='Storage Policy'
+        )
         return parser
 
     def take_action(self, parsed_args):
         self.log.debug('take_action(%s)', parsed_args)
 
         container = parsed_args.container
+        policy = parsed_args.policy
 
         def get_file_size(f):
             currpos = f.tell()
@@ -48,7 +54,8 @@ class CreateObject(lister.Lister):
                     self.app.client_manager.get_account(),
                     container,
                     file_or_path=f,
-                    content_length=get_file_size(f))
+                    content_length=get_file_size(f),
+                    policy=policy)
 
                 results.append((obj, data[1], data[2]))
 
