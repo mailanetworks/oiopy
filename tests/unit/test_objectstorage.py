@@ -313,6 +313,8 @@ class ObjectStorageTest(unittest.TestCase):
         ]
         meta = {object_headers['id']: utils.random_string(),
                 object_headers['policy']: self.policy,
+                object_headers['mime_type']: "octet/stream",
+                object_headers['chunk_method']: "bytes",
                 object_headers['version']: utils.random_string()}
         api._content_prepare = Mock(return_value=(meta, raw_chunks))
         api._content_create = Mock(return_value=({}, {}))
@@ -385,7 +387,10 @@ class ObjectStorageTest(unittest.TestCase):
         src = empty_stream()
         sysmeta = {'content_length': 0,
                    'id': utils.random_string(),
-                   'version': utils.random_string()}
+                   'version': utils.random_string(),
+                   'mime_type': utils.random_string(),
+                   'chunk_method': utils.random_string(),
+                   'policy': utils.random_string()}
 
         with set_http_connect(201, 201, 201):
             chunks, bytes_transferred, content_checksum = api._put_stream(
@@ -416,7 +421,10 @@ class ObjectStorageTest(unittest.TestCase):
         src = empty_stream()
         sysmeta = {'content_length': 0,
                    'id': utils.random_string(),
-                   'version': utils.random_string()}
+                   'version': utils.random_string(),
+                   'mime_type': utils.random_string(),
+                   'chunk_method': utils.random_string(),
+                   'policy': utils.random_string()}
 
         with set_http_connect(201, Exception(), Exception()):
             chunks, bytes_transferred, content_checksum = api._put_stream(
@@ -437,7 +445,10 @@ class ObjectStorageTest(unittest.TestCase):
         src = empty_stream()
         sysmeta = {'content_length': 0,
                    'id': utils.random_string(),
-                   'version': utils.random_string()}
+                   'version': utils.random_string(),
+                   'mime_type': utils.random_string(),
+                   'chunk_method': utils.random_string(),
+                   'policy': utils.random_string()}
 
         with set_http_connect(200, slow_connect=True):
             chunks, bytes_transferred, content_checksum = api._put_stream(
@@ -455,7 +466,10 @@ class ObjectStorageTest(unittest.TestCase):
         src = fakes.FakeTimeoutStream(5)
         sysmeta = {'content_length': 0,
                    'id': utils.random_string(),
-                   'version': utils.random_string()}
+                   'version': utils.random_string(),
+                   'mime_type': utils.random_string(),
+                   'chunk_method': utils.random_string(),
+                   'policy': utils.random_string()}
 
         with set_http_connect(200):
             self.assertRaises(
