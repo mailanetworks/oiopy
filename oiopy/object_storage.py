@@ -732,7 +732,7 @@ class ObjectStorageAPI(API):
                 chunk_size = remaining_bytes
 
             headers = {}
-            headers["X-oio-chunk-meta-content-storagepolicy"] = \
+            headers["X-oio-chunk-meta-content-storage-policy"] = \
                 sysmeta['policy']
             headers["X-oio-chunk-meta-rawxlist"] = \
                 _encode_rawxlist(chunks[pos])
