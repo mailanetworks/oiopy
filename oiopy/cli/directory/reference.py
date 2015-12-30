@@ -220,9 +220,27 @@ class ForceReference(command.Command):
             help='Reference to update'
         )
         parser.add_argument(
-            'service',
-            metavar='<service>',
-            help='Service to force link to reference'
+            'host',
+            metavar='<host>',
+            help='Service host'
+        )
+        parser.add_argument(
+            'type',
+            metavar='<type>',
+            help="Service type"
+        )
+        parser.add_argument(
+            '--seq',
+            metavar='<seq>',
+            default=1,
+            type=int,
+            help='Service sequence number'
+        )
+        parser.add_argument(
+            '--args',
+            metavar='<args>',
+            default="",
+            help='Service args'
         )
         return parser
 
@@ -230,11 +248,15 @@ class ForceReference(command.Command):
         self.log.debug('take_action(%s)', parsed_args)
 
         reference = parsed_args.reference
-        service = parsed_args.service
+        service = dict(host=parsed_args.host,
+                       type=parsed_args.type,
+                       args=parsed_args.args,
+                       seq=parsed_args.seq)
 
         self.app.client_manager.directory.force(
             self.app.client_manager.get_account(),
             reference,
+            parsed_args.type,
             service
         )
 
