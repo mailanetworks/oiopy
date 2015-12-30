@@ -513,7 +513,9 @@ class ObjectStorageTest(unittest.TestCase):
         sysmeta = {'content_length': 6,
                    'id': "myid",
                    'version': "1234",
-                   'policy': "RaIn"}
+                   'policy': "RaIn",
+                   'chunk_method': "plain/rain?algo=liber8tion&k=6&m=2",
+                   'mime_type': "application/octet-stream"}
 
         put_resp = Mock()
         put_resp.headers = {
