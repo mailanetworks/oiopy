@@ -47,6 +47,7 @@ class ObjectStorageTest(unittest.TestCase):
         self.account = "test"
         self.container = "fake"
         self.headers = {"x-req-id": utils.random_string()}
+        self.policy = "THREECOPIES"
         self.uri_base = "NS"
 
     def test_handle_container_not_found(self):
@@ -311,8 +312,9 @@ class ObjectStorageTest(unittest.TestCase):
             {"url": "http://1.2.3.4:6000/CCCC", "pos": "2", "size": 32}
         ]
         meta = {object_headers['id']: utils.random_string(),
-                object_headers['version']: utils.random_string(),
-                object_headers['policy']: utils.random_string()}
+                object_headers['policy']: self.policy,
+                object_headers['chunk_method']: utils.random_string(),
+                object_headers['version']: utils.random_string()}
         api._content_prepare = Mock(return_value=(meta, raw_chunks))
         api._content_create = Mock(return_value=({}, {}))
         with set_http_connect(201, 201, 201):

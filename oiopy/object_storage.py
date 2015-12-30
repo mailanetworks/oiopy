@@ -280,7 +280,7 @@ class ObjectStorageAPI(API):
     def object_create(self, account, container, file_or_path=None, data=None,
                       etag=None, obj_name=None, content_type=None,
                       content_encoding=None, content_length=None,
-                      metadata=None, headers=None):
+                      metadata=None, policy=None, headers=None):
         if (data, file_or_path) == (None, None):
             raise exc.MissingData()
         src = data if data is not None else file_or_path
@@ -315,16 +315,16 @@ class ObjectStorageAPI(API):
         if src is data:
             return self._object_create(
                 account, container, obj_name, StringIO(data), sysmeta,
-                metadata=metadata, headers=headers)
+                metadata=metadata, policy=policy, headers=headers)
         elif hasattr(file_or_path, "read"):
             return self._object_create(
                 account, container, obj_name, src, sysmeta, metadata=metadata,
-                headers=headers)
+                policy=policy, headers=headers)
         else:
             with open(file_or_path, "rb") as f:
                 return self._object_create(
                     account, container, obj_name, f, sysmeta,
-                    metadata=metadata, headers=headers)
+                    metadata=metadata, policy=policy, headers=headers)
 
     @handle_object_not_found
     def object_delete(self, account, container, obj, headers=None):
@@ -448,10 +448,12 @@ class ObjectStorageAPI(API):
         return resp, resp_body
 
     def _content_prepare(self, account, container, obj_name, size,
-                         headers=None):
+                         policy=None, headers=None):
         uri = self._make_uri('content/prepare')
         params = self._make_params(account, container, obj_name)
         args = {'size': size}
+        if policy:
+            args['policy'] = policy
         headers = headers or {}
         headers['x-oio-action-mode'] = 'autocreate'
         resp, resp_body = self._request(
@@ -469,14 +471,15 @@ class ObjectStorageAPI(API):
         return resp.headers, resp_body
 
     def _object_create(self, account, container, obj_name, src,
-                       sysmeta, metadata=None, headers=None):
+                       sysmeta, metadata=None, policy=None, headers=None):
         meta, raw_chunks = self._content_prepare(
             account, container, obj_name, sysmeta['content_length'],
-            headers=headers)
+            policy=policy, headers=headers)
 
         sysmeta['id'] = meta[object_headers['id']]
         sysmeta['version'] = meta[object_headers['version']]
         sysmeta['policy'] = meta[object_headers['policy']]
+        sysmeta['chunk_method'] = meta[object_headers['chunk_method']]
 
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
 
@@ -499,6 +502,7 @@ class ObjectStorageAPI(API):
         hdrs[object_headers['id']] = sysmeta['id']
         hdrs[object_headers['mime_type']] = sysmeta['mime_type']
         hdrs[object_headers['policy']] = sysmeta['policy']
+        hdrs[object_headers['chunk_method']] = sysmeta['chunk_method']
 
         if metadata:
             for k, v in metadata.iteritems():
@@ -726,7 +730,7 @@ class ObjectStorageAPI(API):
                 chunk_size = remaining_bytes
 
             headers = {}
-            headers["X-oio-chunk-meta-content-storagepolicy"] = \
+            headers["X-oio-chunk-meta-content-storage-policy"] = \
                 sysmeta['policy']
             headers["X-oio-chunk-meta-rawxlist"] = \
                 _encode_rawxlist(chunks[pos])
