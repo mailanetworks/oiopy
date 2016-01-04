@@ -725,10 +725,6 @@ class ObjectStorageAPI(API):
                 })
             return res
 
-        if content_length == 0:
-            # TODO special case
-            raise exc.OioException("Empty content not supported by rainx")
-
         for pos in xrange(len(chunks)):
             rainx_url = self._get_service_url("rainx")
 
