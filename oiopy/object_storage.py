@@ -19,9 +19,11 @@ import json
 import os
 from urlparse import urlparse
 
+import requests
 from eventlet import Timeout
 from eventlet.greenpool import GreenPile
 from eventlet.queue import Queue
+from requests.exceptions import RequestException
 
 from oiopy.api import API
 from oiopy.directory import DirectoryAPI
@@ -377,8 +379,12 @@ class ObjectStorageAPI(API):
             account, container, obj, headers=headers)
         rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
         chunks = _sort_chunks(raw_chunks, rain_security)
-        stream = self._fetch_stream(
-            meta, chunks, rain_security, size, offset, headers=headers)
+        if rain_security:
+            stream = self._fetch_stream_rain(
+                meta, chunks, size, offset, headers=headers)
+        else:
+            stream = self._fetch_stream(
+                meta, chunks, size, offset, headers=headers)
         return meta, stream
 
     @handle_object_not_found
@@ -644,24 +650,11 @@ class ObjectStorageAPI(API):
 
         return content_chunks, total_bytes_transferred, content_checksum
 
-    def _fetch_stream(self, meta, chunks, rain_security, size, offset,
-                      headers=None):
+    def _fetch_stream(self, meta, chunks, size, offset, headers=None):
         current_offset = 0
         total_bytes = 0
         if size is None:
             size = int(meta["length"])
-        if rain_security:
-            # Quick hack to allow the download of rainx content without
-            # managing the chunk rebuilding
-            chunks_to_read = {}
-            i = 0
-            for pos in range(len(chunks)):
-                for subpos in range(len(chunks[pos])):
-                    if str(subpos) not in chunks[pos]:
-                        break  # ignore parity chunks
-                    chunks_to_read[i] = [chunks[pos][str(subpos)]]
-                    i += 1
-            chunks = chunks_to_read
 
         for pos in range(len(chunks)):
             chunk_size = int(chunks[pos][0]["size"])
@@ -765,6 +758,14 @@ class ObjectStorageAPI(API):
 
         return content_chunks, total_bytes_transferred, content_checksum
 
+    def _fetch_stream_rain(self, meta, chunks, size, offset, headers=None):
+        def get_rainx_addr():
+            return self._get_service_url("rainx")
+
+        downloader = RainDownloader(get_rainx_addr, meta, chunks)
+        for d in downloader.get_stream(offset, size):
+            yield d
+
 
 def close_source(source):
     try:
@@ -861,3 +862,166 @@ class ChunkDownloadHandler(object):
             raise
         finally:
             close_source(source)
+
+
+class RainDownloader(object):
+    def __init__(self, get_rainx_addr, meta, chunks):
+        self.get_rainx_addr = get_rainx_addr
+        self.meta = meta
+        self._meta_extract_k()
+        self.chunks = chunks
+        self.session = requests.session()
+
+    def _meta_extract_k(self):
+        coding, params = self.meta["chunk-method"].split('?')
+        for param in params.split('&'):
+            key, value = param.split('=')
+            if key == 'k':
+                self.k = int(value)
+
+    def _get_sorted_chunks_at_metapos(self, metapos):
+        chunks_at_pos = self.chunks[metapos]
+        res = []
+        for subpos in xrange(len(chunks_at_pos)):
+            data_chunk = chunks_at_pos.get(str(subpos))
+            if data_chunk is None:
+                break
+            res.append(data_chunk)
+        for subpos in xrange(len(chunks_at_pos)):
+            parity_chunk = chunks_at_pos.get("p%d" % subpos)
+            if parity_chunk is None:
+                break
+            res.append(parity_chunk)
+        return res
+
+    def get_metachunk_size(self, metapos):
+        metachunk_size = 0
+        for subpos, subchunk in self.chunks[metapos].iteritems():
+            if subpos.startswith("p"):
+                continue
+            metachunk_size += subchunk["size"]
+        return metachunk_size
+
+    def get_stream(self, offset, size):
+        current_offset = 0
+        total_bytes = 0
+        if size is None:
+            size = int(self.meta["length"])
+
+        for metapos in range(len(self.chunks)):
+            metachunk_size = self.get_metachunk_size(metapos)
+
+            if total_bytes >= size:
+                break
+            if current_offset + metachunk_size > offset:
+                if current_offset < offset:
+                    _offset = offset - current_offset
+                else:
+                    _offset = 0
+                if metachunk_size + total_bytes > size:
+                    _size = size - total_bytes
+                else:
+                    _size = metachunk_size
+
+                for s in self.get_metachunk_stream(metapos, _size, _offset):
+                    total_bytes += len(s)
+                    yield s
+            current_offset += metachunk_size
+
+    def get_metachunk_stream(self, metapos, size, offset):
+        skip = 0
+
+        for chunk in self._get_sorted_chunks_at_metapos(metapos):
+            if ".p" in chunk["pos"]:
+                break  # all data chunks have been processed
+            if size == 0:
+                break  # no more data wanted
+            chunk_offset = offset - skip
+            if chunk_offset <= chunk["size"]:
+                chunk_to_read = chunk["size"] - chunk_offset
+                if chunk_to_read > size:
+                    chunk_to_read = size
+                headers = {
+                    "Range": "bytes=%d-%d" % (chunk_offset,
+                                              chunk_offset + chunk_to_read - 1)
+                }
+
+                try:
+                    resp = self.session.get(chunk["url"],
+                                            headers=headers, stream=True)
+                    resp.raise_for_status()
+                    for data in resp.iter_content(READ_CHUNK_SIZE):
+                        yield data
+                        offset += len(data)
+                        size -= len(data)
+                except RequestException:
+                    for data in self.get_rebuilt_stream(metapos, offset, size,
+                                                        broken_chunk=chunk):
+                        yield data
+                    return
+
+            skip += chunk["size"]
+
+    def _gen_rawx_list(self, chunks):
+        res_chunks = []
+        for c in chunks:
+            host = c['url'].split('/')[2]
+            chunk_id = c['url'].split('/')[-1]
+            res_chunks.append("%s/%s" % (host, chunk_id))
+        return '|'.join(res_chunks)
+
+    def _gen_spare_rawx_list(self, broken_chunks):
+        res = []
+        for c in broken_chunks:
+            if ".p" in c["pos"]:
+                broken_idx = self.k + int(c["pos"].split("p")[-1])
+            else:
+                broken_idx = int(c["pos"].split(".")[-1])
+            res.append("%s|%d|%s" % (c["url"], broken_idx, c["hash"]))
+        return ';'.join(res)
+
+    def get_rebuilt_stream(self, metapos, offset, size, broken_chunk=None):
+        chunks = self._get_sorted_chunks_at_metapos(metapos)
+        broken_chunks = []
+        for c in chunks:
+            if broken_chunks is not None and c["pos"] == broken_chunk["pos"]:
+                broken_chunks.append(c)
+                continue
+            resp = self.session.head(c["url"])
+            if resp.status_code != 200:
+                broken_chunks.append(c)
+
+        headers = {}
+        headers["X-oio-chunk-meta-content-storage-policy"] = \
+            self.meta["policy"]
+        headers["X-oio-chunk-meta-rawxlist"] = \
+            self._gen_rawx_list(chunks)
+        headers["X-oio-chunk-meta-sparerawxlist"] = \
+            self._gen_spare_rawx_list(broken_chunks)
+        headers[chunk_headers["content_id"]] = 64 * '0'
+        headers[chunk_headers["content_version"]] = 0
+        headers[chunk_headers["content_path"]] = "xxx"
+        headers[chunk_headers["content_size"]] = 0
+        headers[chunk_headers["content_chunksnb"]] = 0
+        headers[chunk_headers["container_id"]] = 64 * '0'
+        headers[chunk_headers["chunk_pos"]] = 0
+        headers["X-oio-chunk-meta-chunk-size"] = \
+            self.get_metachunk_size(metapos)
+
+        rainx_addr = "%s%s" % (self.get_rainx_addr(), "on-the-fly")
+        resp = self.session.get(rainx_addr, headers=headers, stream=True)
+        if resp.status_code != 200:
+            raise exc.OioException("Error while rebuilding chunk on the fly")
+
+        cur_pos = 0
+        iter_data = resp.iter_content(READ_CHUNK_SIZE)
+        for data in iter_data:  # skip data to offset
+            if offset > cur_pos + len(data):
+                cur_pos += len(data)
+                continue  # skip data already read
+            data_offset = offset - cur_pos
+            d = data[data_offset:data_offset + size]
+            offset += len(d)
+            size -= len(d)
+            yield d
+            cur_pos += len(data)

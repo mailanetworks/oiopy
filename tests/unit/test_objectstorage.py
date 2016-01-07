@@ -476,27 +476,6 @@ class ObjectStorageTest(unittest.TestCase):
                 exceptions.ClientReadTimeout, api._put_stream, self.account,
                 self.container, name, src, sysmeta, chunks)
 
-    def test_rain_put_stream_empty(self):
-        api = self.api
-        name = utils.random_string()
-        chunks = {
-            0: {
-                "0": {"url": "http://1.2.3.4:6000/AAAA",
-                      "pos": "0.0",
-                      "size": 32,
-                      "hash": "00000000000000000000000000000000"}
-            }
-        }
-        src = empty_stream()
-        sysmeta = {'content_length': 0,
-                   'id': utils.random_string(),
-                   'version': utils.random_string(),
-                   'policy': utils.random_string()}
-
-        self.assertRaises(exceptions.OioException, api._put_stream_rain,
-                          self.account, self.container, name, src,
-                          sysmeta, chunks)
-
     def test_rain_put_stream(self):
         chunks = {
             0: {
@@ -514,7 +493,7 @@ class ObjectStorageTest(unittest.TestCase):
                    'id': "myid",
                    'version': "1234",
                    'policy': "RaIn",
-                   'chunk_method': "plain/rain?algo=liber8tion&k=6&m=2",
+                   'chunk_method': "plain/rain?algo=liber8tion&k=2&m=1",
                    'mime_type': "application/octet-stream"}
 
         put_resp = Mock()
