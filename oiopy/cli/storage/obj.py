@@ -375,9 +375,23 @@ class AnalyzeObject(lister.Lister):
             container,
             obj)
 
-        def sort_chunk_pos(c):
-            return int(c[0].split('.', 1)[0])
+        def sort_chunk_pos(c1, c2):
+            c1_tokens = c1[0].split('.')
+            c2_tokens = c2[0].split('.')
+            c1_pos = int(c1_tokens[0])
+            c2_pos = int(c2_tokens[0])
+            if len(c1_tokens) == 1 or c1_pos != c2_pos:
+                return c1_pos - c2_pos
+            c1_subpos = c1_tokens[1]
+            c2_subpos = c2_tokens[1]
+            if c1_subpos[0] != 'p' and c2_subpos[0] != 'p':
+                return int(c1_subpos) - int(c2_subpos)
+            if c1_subpos[0] == 'p' and c2_subpos[0] == 'p':
+                return int(c1_subpos[1:]) - int(c2_subpos[1:])
+            if c1_subpos[0] == 'p':
+                return 1
+            return -1
 
         l = ((c['pos'], c['url'], c['size'], c['hash']) for c in data[1])
         columns = ('Pos', 'Id', 'Size', 'Hash')
-        return columns, sorted(l, key=sort_chunk_pos)
+        return columns, sorted(l, cmp=sort_chunk_pos)
