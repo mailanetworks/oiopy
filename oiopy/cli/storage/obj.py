@@ -28,6 +28,13 @@ class CreateObject(lister.Lister):
             help='Local filename(s) to upload'
         )
         parser.add_argument(
+            '--name',
+            metavar='<key>',
+            default=[],
+            action='append',
+            help='Object name to create'
+        )
+        parser.add_argument(
             '--policy',
             metavar='<policy>',
             help='Storage Policy'
@@ -39,6 +46,8 @@ class CreateObject(lister.Lister):
 
         container = parsed_args.container
         policy = parsed_args.policy
+        objs = parsed_args.objects
+        names = parsed_args.name
 
         def get_file_size(f):
             currpos = f.tell()
@@ -48,16 +57,18 @@ class CreateObject(lister.Lister):
             return total_size
 
         results = []
-        for obj in parsed_args.objects:
+        for obj in objs:
             with io.open(obj, 'rb') as f:
+                name = names.pop(0) if names else os.path.basename(f.name)
                 data = self.app.client_manager.storage.object_create(
                     self.app.client_manager.get_account(),
                     container,
                     file_or_path=f,
+                    obj_name=name,
                     content_length=get_file_size(f),
                     policy=policy)
 
-                results.append((obj, data[1], data[2]))
+                results.append((name, data[1], data[2].upper()))
 
         l = (obj for obj in results)
         columns = ('Name', 'Size', 'Hash')
