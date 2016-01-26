@@ -987,8 +987,14 @@ class RainDownloader(object):
             if broken_chunks is not None and c["pos"] == broken_chunk["pos"]:
                 broken_chunks.append(c)
                 continue
-            resp = self.session.head(c["url"])
-            if resp.status_code != 200:
+            status = True
+            try:
+                resp = self.session.head(c["url"])
+                if resp.status_code != 200:
+                    status = False
+            except Exception:
+                status = False
+            if not status:
                 broken_chunks.append(c)
 
         headers = {}

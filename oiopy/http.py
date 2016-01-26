@@ -12,10 +12,9 @@
 # License along with this library.
 
 from eventlet import patcher
+from eventlet.green.httplib import HTTPConnection
 
 requests = patcher.import_patched('requests.__init__')
-
-from eventlet.green.httplib import HTTPConnection
 
 
 def http_connect(host, method, path, headers=None):
