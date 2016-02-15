@@ -174,8 +174,6 @@ class ObjectStorageTest(unittest.TestCase):
         name = utils.random_string()
         api.container_delete(self.account, name, headers=self.headers)
 
-        api.directory.unlink.assert_called_once_with(
-            self.account, name, "meta2", headers=self.headers)
         uri = "%s/container/destroy" % self.uri_base
         params = {'acct': self.account, 'ref': name}
         api._request.assert_called_once_with(
