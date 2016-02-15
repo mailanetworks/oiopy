@@ -222,8 +222,6 @@ class ObjectStorageAPI(API):
         except exc.Conflict as e:
             raise exc.ContainerNotEmpty(e)
 
-        self.directory.unlink(account, container, "meta2", headers=headers)
-
     def container_list(self, account, limit=None, marker=None,
                        end_marker=None, prefix=None, delimiter=None,
                        headers=None):
