@@ -393,16 +393,8 @@ class AnalyzeObject(lister.Lister):
             c2_pos = int(c2_tokens[0])
             if len(c1_tokens) == 1 or c1_pos != c2_pos:
                 return c1_pos - c2_pos
-            c1_subpos = c1_tokens[1]
-            c2_subpos = c2_tokens[1]
-            if c1_subpos[0] != 'p' and c2_subpos[0] != 'p':
-                return int(c1_subpos) - int(c2_subpos)
-            if c1_subpos[0] == 'p' and c2_subpos[0] == 'p':
-                return int(c1_subpos[1:]) - int(c2_subpos[1:])
-            if c1_subpos[0] == 'p':
-                return 1
-            return -1
+            return cmp(c1[0], c2[0])
 
-        l = ((c['pos'], c['url'], c['size'], c['hash']) for c in data[1])
+        chunks = ((c['pos'], c['url'], c['size'], c['hash']) for c in data[1])
         columns = ('Pos', 'Id', 'Size', 'Hash')
-        return columns, sorted(l, cmp=sort_chunk_pos)
+        return columns, sorted(chunks, cmp=sort_chunk_pos)
