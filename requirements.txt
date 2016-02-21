@@ -1,4 +1,4 @@
 cliff>=1.13.0
 cliff-tablib>=1.0
-requests
-eventlet
+requests>=2.6.0
+eventlet>=0.15.2
