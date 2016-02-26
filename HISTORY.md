@@ -1,6 +1,12 @@
 Release History
 ===============
 
+0.7.0 (2016-02-26)
+------------------
+
+* RAINX full support
+* Sort chunks by score before downloading
+
 0.6.0 (2015-12-1)
 ------------------
 
