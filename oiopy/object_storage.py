@@ -173,6 +173,13 @@ class ObjectStorageAPI(API):
         created = (resp.status_code == 201)
         return created
 
+    def account_delete(self, account, headers=None):
+        uri = '/v1.0/account/delete'
+        account_id = utils.quote(account, '')
+        params = {'id': account_id}
+        resp, resp_body = self._account_request('POST', uri, params=params,
+                                                headers=headers)
+
     def account_show(self, account, headers=None):
         uri = "/v1.0/account/show"
         account_id = utils.quote(account, '')
