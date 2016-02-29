@@ -28,6 +28,30 @@ class ShowAccount(show.ShowOne):
         return zip(*sorted(data.iteritems()))
 
 
+class DeleteAccount(command.Command):
+    """Delete account"""
+
+    log = logging.getLogger(__name__ + '.DeleteAccount')
+
+    def get_parser(self, prog_name):
+        parser = super(DeleteAccount, self).get_parser(prog_name)
+        parser.add_argument(
+            'accounts',
+            metavar='<account>',
+            nargs='+',
+            help='Account(s) to delete'
+        )
+        return parser
+
+    def take_action(self, parsed_args):
+        self.log.debug('take_action(%s)', parsed_args)
+
+        for account in parsed_args.accounts:
+            self.app.client_manager.storage.account_delete(
+                account=account
+            )
+
+
 class CreateAccount(command.Command):
     """Create account"""
 
