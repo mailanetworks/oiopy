@@ -130,7 +130,7 @@ class DirectoryAPI(API):
         """
         uri = self._make_uri('reference/get_properties')
         params = self._make_params(account, reference)
-        data = properties
+        data = properties or []
         resp, resp_body = self._request(
             'POST', uri, params=params, data=json.dumps(data),
             headers=headers)
