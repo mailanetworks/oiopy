@@ -1,5 +1,4 @@
 from eventlet import Timeout
-from contextlib import contextmanager
 from cStringIO import StringIO
 import json
 from mock import MagicMock as Mock
@@ -8,10 +7,10 @@ import random
 import unittest
 
 
-import oiopy
 from oiopy import exceptions
 from oiopy import fakes
 from oiopy import utils
+from oiopy.fakes import set_http_connect
 from oiopy.object_storage import container_headers
 from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
@@ -19,22 +18,6 @@ from oiopy.object_storage import object_headers
 from oiopy.object_storage import _sort_chunks
 from oiopy.object_storage import ChunkDownloadHandler
 from oiopy.object_storage import ChunkReadTimeout
-
-
-@contextmanager
-def set_http_connect(*args, **kwargs):
-    old = oiopy.object_storage.http_connect
-
-    new = fakes.fake_http_connect(*args, **kwargs)
-    try:
-        oiopy.object_storage.http_connect = new
-        yield new
-        unused_status = list(new.status_iter)
-        if unused_status:
-            raise AssertionError('unused status %r' % unused_status)
-
-    finally:
-        oiopy.object_storage.http_connect = old
 
 
 def empty_stream():

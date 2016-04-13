@@ -17,6 +17,8 @@ from eventlet import Timeout, sleep
 from oiopy.directory import DirectoryAPI
 from oiopy.object_storage import ObjectStorageAPI
 from oiopy.http import requests
+from contextlib import contextmanager
+import oiopy
 
 
 class FakeAPI(object):
@@ -30,6 +32,22 @@ class FakeResponse(requests.Response):
 
 class FakeSession(requests.Session):
     pass
+
+
+@contextmanager
+def set_http_connect(*args, **kwargs):
+    old = oiopy.object_storage.http_connect
+
+    new = fake_http_connect(*args, **kwargs)
+    try:
+        oiopy.object_storage.http_connect = new
+        yield new
+        unused_status = list(new.status_iter)
+        if unused_status:
+            raise AssertionError('unused status %r' % unused_status)
+
+    finally:
+        oiopy.object_storage.http_connect = old
 
 
 def fake_http_connect(*status_iter, **kwargs):
