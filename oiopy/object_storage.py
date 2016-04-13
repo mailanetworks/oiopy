@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 from urlparse import urlparse
+from urllib import unquote
 
 import requests
 from eventlet import Timeout
@@ -30,7 +31,7 @@ from oiopy.directory import DirectoryAPI
 from oiopy import exceptions as exc
 from oiopy import utils
 from oiopy.exceptions import ConnectionTimeout, ChunkReadTimeout, \
-    ChunkWriteTimeout
+    ChunkWriteTimeout, ClientReadTimeout, SourceReadError
 from oiopy.http import http_connect
 
 
@@ -38,11 +39,14 @@ CONTAINER_METADATA_PREFIX = "x-oio-container-meta-"
 OBJECT_METADATA_PREFIX = "x-oio-content-meta-"
 CHUNK_METADATA_PREFIX = "x-oio-chunk-meta-"
 
+CONTAINER_USER_METADATA_PREFIX = CONTAINER_METADATA_PREFIX + 'user-'
+
 WRITE_CHUNK_SIZE = 65536
 READ_CHUNK_SIZE = 65536
 
 CONNECTION_TIMEOUT = 2
 CHUNK_TIMEOUT = 3
+CLIENT_TIMEOUT = 3
 
 PUT_QUEUE_DEPTH = 10
 
@@ -364,11 +368,11 @@ class ObjectStorageAPI(API):
             'GET', uri, params=params, headers=headers)
 
         if include_metadata:
-            metadata = {}
+            meta = {}
             for k, v in resp.headers.iteritems():
-                if k.startswith('%suser-' % CONTAINER_METADATA_PREFIX):
-                    metadata[k[len(CONTAINER_METADATA_PREFIX + 'user-'):]] = v
-            return metadata, resp_body
+                if k.lower().startswith(CONTAINER_USER_METADATA_PREFIX):
+                    meta[k[len(CONTAINER_USER_METADATA_PREFIX):]] = unquote(v)
+            return meta, resp_body
 
         return resp_body
 
@@ -513,6 +517,10 @@ class ObjectStorageAPI(API):
                 self._put_stream(account, container, obj_name, src,
                                  sysmeta, chunks, headers=headers)
 
+        etag = sysmeta['etag']
+        if etag and etag.lower() != content_checksum.lower():
+            raise exc.EtagMismatch(
+                "given etag %s != computed %s" % (etag, content_checksum))
         sysmeta['etag'] = content_checksum
 
         hdrs = {}
@@ -608,8 +616,11 @@ class ObjectStorageAPI(API):
                             read_size = WRITE_CHUNK_SIZE
                         else:
                             read_size = remaining_bytes
-                        with ChunkReadTimeout(CHUNK_TIMEOUT):
-                            data = src.read(read_size)
+                        with ClientReadTimeout(CLIENT_TIMEOUT):
+                            try:
+                                data = src.read(read_size)
+                            except (ValueError, IOError) as e:
+                                raise SourceReadError(str(e))
                             if len(data) == 0:
                                 for conn in conns:
                                     conn.queue.put('0\r\n\r\n')
@@ -633,12 +644,15 @@ class ObjectStorageAPI(API):
 
                 conns = [conn for conn in conns if not conn.failed]
 
-            except ChunkReadTimeout:
-                raise exc.ClientReadTimeout()
-            except (Exception, Timeout):
+            except SourceReadError:
+                raise
+            except ClientReadTimeout:
+                raise
+            except Timeout as e:
+                raise exc.OioTimeout(str(e))
+            except Exception as e:
                 raise exc.OioException(
-                    "Exception during chunk write."
-                )
+                    "Exception during chunk write %s" % str(e))
 
             final_chunks = []
             for conn in conns:

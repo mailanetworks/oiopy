@@ -23,6 +23,14 @@ class OioException(Exception):
     pass
 
 
+class PreconditionFailed(OioException):
+    pass
+
+
+class EtagMismatch(OioException):
+    pass
+
+
 class MissingContentLength(OioException):
     pass
 
@@ -55,7 +63,7 @@ class NoSuchReference(OioException):
     pass
 
 
-class ClientReadTimeout(OioException):
+class ClientReadTimeout(Timeout):
     pass
 
 
@@ -72,7 +80,15 @@ class ClientException(OioException):
         return fstring
 
 
+class OioTimeout(OioException):
+    pass
+
+
 class ConnectionTimeout(Timeout):
+    pass
+
+
+class SourceReadError(OioException):
     pass
 
 
