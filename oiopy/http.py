@@ -11,6 +11,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
+import re
 from eventlet import patcher
 from eventlet.green.httplib import HTTPConnection
 
@@ -26,3 +27,24 @@ def http_connect(host, method, path, headers=None):
             conn.putheader(header, str(value))
     conn.endheaders()
     return conn
+
+_token = r'[^()<>@,;:\"/\[\]?={}\x00-\x20\x7f]+'
+_ext_pattern = re.compile(
+    r'(?:\s*;\s*(' + _token + r')\s*(?:=\s*(' + _token +
+    r'|"(?:[^"\\]|\\.)*"))?)')
+
+
+def parse_content_type(raw_content_type):
+    param_list = []
+    if ';' in raw_content_type:
+        content_type, params = raw_content_type.split(';', 1)
+        params = ';' + params
+        for p in _ext_pattern.findall(params):
+            k = p[0].strip()
+            v = p[1].strip()
+            param_list.append((k, v))
+    return raw_content_type, param_list
+
+
+def parse_content_range(raw_content_range):
+    pass

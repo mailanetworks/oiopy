@@ -1,8 +1,6 @@
-from eventlet import Timeout
 from cStringIO import StringIO
 import json
 from mock import MagicMock as Mock
-from mock import patch
 import random
 import unittest
 
@@ -10,14 +8,10 @@ import unittest
 from oiopy import exceptions
 from oiopy import fakes
 from oiopy import utils
-from oiopy.fakes import set_http_connect
-from oiopy.object_storage import container_headers
+from oiopy.constants import container_headers, object_headers
 from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
-from oiopy.object_storage import object_headers
 from oiopy.object_storage import _sort_chunks
-from oiopy.object_storage import ChunkDownloadHandler
-from oiopy.object_storage import ChunkReadTimeout
 
 
 def empty_stream():
@@ -284,26 +278,6 @@ class ObjectStorageTest(unittest.TestCase):
             exceptions.NoSuchObject, api.object_delete, self.account,
             self.container, name)
 
-    def test_object_store(self):
-        api = self.api
-        name = utils.random_string()
-        raw_chunks = [
-            {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
-            {"url": "http://1.2.3.4:6000/BBBB", "pos": "1", "size": 32},
-            {"url": "http://1.2.3.4:6000/CCCC", "pos": "2", "size": 32}
-        ]
-        meta = {object_headers['id']: utils.random_string(),
-                object_headers['policy']: self.policy,
-                object_headers['mime_type']: "octet/stream",
-                object_headers['chunk_method']: "bytes",
-                object_headers['version']: utils.random_string()}
-        api._content_prepare = Mock(return_value=(meta, raw_chunks))
-        api._content_create = Mock(return_value=({}, {}))
-        with set_http_connect(201, 201, 201):
-            api.object_create(
-                self.account, self.container, obj_name=name, data="x",
-                headers=self.headers)
-
     def test_sort_chunks(self):
         raw_chunks = [
             {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
@@ -329,292 +303,24 @@ class ObjectStorageTest(unittest.TestCase):
         raw_chunks = [
             {"url": "http://1.2.3.4:6000/AAAA", "pos": "0.0", "size": 32},
             {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1", "size": 32},
-            {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0", "size": 32},
+            {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.2", "size": 32},
             {"url": "http://1.2.3.4:6000/DDDD", "pos": "1.0", "size": 32},
             {"url": "http://1.2.3.4:6000/EEEE", "pos": "1.1", "size": 32},
-            {"url": "http://1.2.3.4:6000/FFFF", "pos": "1.p0", "size": 32},
+            {"url": "http://1.2.3.4:6000/FFFF", "pos": "1.2", "size": 32},
         ]
         chunks = _sort_chunks(raw_chunks, True)
         sorted_chunks = {
-            0: {
-                "0": {
-                    "url": "http://1.2.3.4:6000/AAAA", "pos": "0.0",
-                    "size": 32},
-                "1": {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1",
-                      "size": 32},
-                "p0": {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0",
-                       "size": 32}
-            },
-            1: {
-                "0": {"url": "http://1.2.3.4:6000/DDDD", "pos": "1.0",
-                      "size": 32},
-                "1": {"url": "http://1.2.3.4:6000/EEEE", "pos": "1.1",
-                      "size": 32},
-                "p0": {"url": "http://1.2.3.4:6000/FFFF", "pos": "1.p0",
-                       "size": 32}
-            }}
+            0: [{"url": "http://1.2.3.4:6000/AAAA",
+                 "pos": "0.0", "size": 32, "num": 0},
+                {"url": "http://1.2.3.4:6000/BBBB",
+                 "pos": "0.1", "size": 32, "num": 1},
+                {"url": "http://1.2.3.4:6000/CCCC",
+                 "pos": "0.2", "size": 32, "num": 2}],
+            1: [{"url": "http://1.2.3.4:6000/DDDD",
+                 "pos": "1.0", "size": 32, "num": 0},
+                {"url": "http://1.2.3.4:6000/EEEE",
+                 "pos": "1.1", "size": 32, "num": 1},
+                {"url": "http://1.2.3.4:6000/FFFF",
+                 "pos": "1.2", "size": 32, "num": 2}]
+        }
         self.assertEqual(chunks, sorted_chunks)
-
-    def test_put_stream_empty(self):
-        api = self.api
-        name = utils.random_string()
-        chunks = {
-            0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
-                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 32},
-                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 32}
-            ]
-        }
-        src = empty_stream()
-        sysmeta = {'content_length': 0,
-                   'id': utils.random_string(),
-                   'version': utils.random_string(),
-                   'mime_type': utils.random_string(),
-                   'chunk_method': utils.random_string(),
-                   'policy': utils.random_string()}
-
-        with set_http_connect(201, 201, 201):
-            chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, sysmeta, chunks)
-
-        final_chunks = [
-            {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
-             "hash": "d41d8cd98f00b204e9800998ecf8427e"},
-            {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 0,
-             "hash": "d41d8cd98f00b204e9800998ecf8427e"},
-            {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 0,
-             "hash": "d41d8cd98f00b204e9800998ecf8427e"}
-        ]
-        self.assertEqual(final_chunks, chunks)
-        self.assertEqual(bytes_transferred, 0)
-        self.assertEqual(content_checksum, "d41d8cd98f00b204e9800998ecf8427e")
-
-    def test_put_stream_connect_exception(self):
-        api = self.api
-        name = utils.random_string()
-        chunks = {
-            0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32},
-                {"url": "http://1.2.3.4:6000/BBBB", "pos": "0", "size": 32},
-                {"url": "http://1.2.3.4:6000/CCCC", "pos": "0", "size": 32}
-            ]
-        }
-        src = empty_stream()
-        sysmeta = {'content_length': 0,
-                   'id': utils.random_string(),
-                   'version': utils.random_string(),
-                   'mime_type': utils.random_string(),
-                   'chunk_method': utils.random_string(),
-                   'policy': utils.random_string()}
-
-        with set_http_connect(201, Exception(), Exception()):
-            chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, sysmeta, chunks)
-        self.assertEqual(len(chunks), 1)
-        chunk = {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 0,
-                 "hash": "d41d8cd98f00b204e9800998ecf8427e"}
-        self.assertEqual(chunk, chunks[0])
-
-    def test_put_stream_connect_timeout(self):
-        api = self.api
-        name = utils.random_string()
-        chunks = {
-            0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32}
-            ]
-        }
-        src = empty_stream()
-        sysmeta = {'content_length': 0,
-                   'id': utils.random_string(),
-                   'version': utils.random_string(),
-                   'mime_type': utils.random_string(),
-                   'chunk_method': utils.random_string(),
-                   'policy': utils.random_string()}
-
-        with set_http_connect(200, slow_connect=True):
-            chunks, bytes_transferred, content_checksum = api._put_stream(
-                self.account, self.container, name, src, sysmeta, chunks)
-
-    def test_put_stream_client_timeout(self):
-        api = self.api
-        name = utils.random_string()
-        chunks = {
-            0: [
-                {"url": "http://1.2.3.4:6000/AAAA", "pos": "0", "size": 32}
-            ]
-        }
-
-        src = fakes.FakeTimeoutStream(5)
-        sysmeta = {'content_length': 0,
-                   'id': utils.random_string(),
-                   'version': utils.random_string(),
-                   'mime_type': utils.random_string(),
-                   'chunk_method': utils.random_string(),
-                   'policy': utils.random_string()}
-
-        with set_http_connect(200):
-            self.assertRaises(
-                exceptions.ClientReadTimeout, api._put_stream, self.account,
-                self.container, name, src, sysmeta, chunks)
-
-    def test_rain_put_stream(self):
-        chunks = {
-            0: {
-                "0": {
-                    "url": "http://1.2.3.4:6000/AAAA", "pos": "0.0",
-                    "size": 32, "hash": "00000000000000000000000000000000"},
-                "1": {"url": "http://1.2.3.4:6000/BBBB", "pos": "0.1",
-                      "size": 32, "hash": "00000000000000000000000000000000"},
-                "p0": {"url": "http://1.2.3.4:6000/CCCC", "pos": "0.p0",
-                       "size": 32, "hash": "00000000000000000000000000000000"}
-            }
-        }
-        src = StringIO("azerty")
-        sysmeta = {'content_length': 6,
-                   'id': "myid",
-                   'version': "1234",
-                   'policy': "RaIn",
-                   'chunk_method': "plain/rain?algo=liber8tion&k=2&m=1",
-                   'mime_type': "application/octet-stream"}
-
-        put_resp = Mock()
-        put_resp.headers = {
-            "chunklist":
-                "0.0|1.2.3.4:6000/AAAA|4|00000000000000000000000000000011;"
-                "0.1|1.2.3.4:6000/BBBB|2|00000000000000000000000000000022;"
-                "0.p0|1.2.3.4:6000/CCCC|3|00000000000000000000000000000033"
-        }
-
-        def fake_put(url, data, headers):
-            self.assertEqual(url, "fake_endpoint")
-            all_data = ""
-            for d in data:
-                all_data += d
-            self.assertEqual(all_data, "azerty")
-            return put_resp
-
-        self.api.session.put = fake_put
-        self.api._get_service_url = Mock(return_value='fake_endpoint')
-
-        chunks, bytes_transferred, content_checksum = \
-            self.api._put_stream_rain("myaccount", "mycontainer",
-                                      "mycontent", src, sysmeta, chunks)
-
-        self.assertEqual(bytes_transferred, 6)
-        self.assertEqual(content_checksum, "ab4f63f9ac65152575886860dde480a1")
-        self.assertEqual(chunks, [
-            {
-                "url": "http://1.2.3.4:6000/AAAA",
-                "hash": "00000000000000000000000000000011",
-                "pos": "0.0",
-                "size": 4
-            },
-            {
-                "url": "http://1.2.3.4:6000/BBBB",
-                "hash": "00000000000000000000000000000022",
-                "pos": "0.1",
-                "size": 2
-            },
-            {
-                "url": "http://1.2.3.4:6000/CCCC",
-                "hash": "00000000000000000000000000000033",
-                "pos": "0.p0",
-                "size": 3
-            },
-        ])
-
-
-class TestSource(object):
-    def __init__(self, parts):
-        self.parts = list(parts)
-
-    def read(self, chunk_size):
-        if self.parts:
-            part = self.parts.pop(0)
-            if part is None:
-                raise ChunkReadTimeout()
-            else:
-                return part
-        else:
-            return ''
-
-
-class TestChunkDownloadHandler(unittest.TestCase):
-    def setUp(self):
-        super(TestChunkDownloadHandler, self).setUp()
-        self.chunks = [
-            {'url': 'http://1.2.3.4:6000/AAAA', 'pos': '0', 'size': 32},
-            {'url': 'http://1.2.3.4:6001/BBBB', 'pos': '0', 'size': 32}]
-        self.size = 32
-        self.offset = 0
-        self.handler = ChunkDownloadHandler(
-            self.chunks, self.size, self.offset)
-
-    @patch('oiopy.object_storage.close_source')
-    @patch('oiopy.object_storage.ChunkDownloadHandler._get_chunk_source')
-    def test_get_stream(self, mock_chunk_source, mock_close):
-        parts = ('foo', 'bar')
-        source = TestSource(parts)
-        mock_chunk_source.return_value = source
-
-        stream = self.handler.get_stream()
-
-        d = ''.join(stream)
-        self.assertTrue(d, 'foobar')
-        mock_close.assert_called_once_with(source)
-
-    @patch('oiopy.object_storage.close_source')
-    def test_make_stream(self, mock_close):
-        source = TestSource(('foo', 'bar'))
-        stream = self.handler._make_stream(source)
-        d = ''.join(stream)
-        self.assertTrue(d, 'foobar')
-        mock_close.assert_called_once_with(source)
-
-    @patch('oiopy.object_storage.close_source')
-    def test_make_stream_timeout(self, mock_close):
-        h = self.handler
-        source = TestSource(('foo', None))
-        source2 = TestSource(('bar',))
-        h._fast_forward = Mock()
-        stream = h._make_stream(source)
-        with patch.object(h, '_get_chunk_source', lambda: source2):
-            parts = list(stream)
-        self.assertEqual(parts, ['foo', 'bar'])
-        h._fast_forward.assert_called_once_with(len('foo'))
-        mock_close.assert_any_call(source)
-        mock_close.assert_any_call(source2)
-        self.assertEqual(mock_close.call_count, 2)
-
-    @patch('oiopy.object_storage.close_source')
-    def test_make_stream_timeout_resume_failure(self, mock_close):
-        h = self.handler
-        source = TestSource(('foo', None))
-        h._fast_forward = Mock()
-        stream = h._make_stream(source)
-        with patch.object(h, '_get_chunk_source', lambda: None):
-            self.assertEqual('foo', next(stream))
-            with self.assertRaises(ChunkReadTimeout):
-                next(stream)
-        h._fast_forward.assert_called_once_with(len('foo'))
-        mock_close.assert_called_once_with(source)
-
-    def test_get_chunk_source(self):
-        with set_http_connect(200, body='foobar'):
-            source = self.handler._get_chunk_source()
-        self.assertEqual('foobar', source.read())
-
-    def test_get_chunk_source_resume_timeout(self):
-        h = self.handler
-        with set_http_connect(Timeout(), 200, body='foobar'):
-            source = h._get_chunk_source()
-        self.assertEqual('foobar', source.read())
-        self.assertEqual(h.failed_chunks, [self.chunks[0]])
-
-    def test_get_chunk_source_resume_404(self):
-        h = self.handler
-        with set_http_connect(404, 200, body='foobar'):
-            source = h._get_chunk_source()
-
-        self.assertEqual('foobar', source.read())
-        self.assertEqual(h.failed_chunks, [self.chunks[0]])

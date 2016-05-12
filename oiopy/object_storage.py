@@ -14,75 +14,36 @@
 
 from cStringIO import StringIO
 from functools import wraps
-import hashlib
 import json
+import logging
 import os
-from urlparse import urlparse
 from urllib import unquote
 
-import requests
-from eventlet import Timeout
-from eventlet.greenpool import GreenPile
-from eventlet.queue import Queue
-from requests.exceptions import RequestException
 
 from oiopy.api import API
 from oiopy.directory import DirectoryAPI
 from oiopy import exceptions as exc
 from oiopy import utils
-from oiopy.exceptions import ConnectionTimeout, ChunkReadTimeout, \
-    ChunkWriteTimeout, ClientReadTimeout, SourceReadError
-from oiopy.http import http_connect
+from oiopy.storage_method import STORAGE_METHODS
+from oiopy.ec import ECWriteHandler, ECChunkDownloadHandler, \
+    obj_range_to_meta_chunk_range
+from oiopy.replication import ReplicatedWriteHandler
+from oiopy import constants
+from oiopy.constants import object_headers
+from oiopy import io
 
 
-CONTAINER_METADATA_PREFIX = "x-oio-container-meta-"
-OBJECT_METADATA_PREFIX = "x-oio-content-meta-"
-CHUNK_METADATA_PREFIX = "x-oio-chunk-meta-"
+logger = logging.getLogger(__name__)
 
-CONTAINER_USER_METADATA_PREFIX = CONTAINER_METADATA_PREFIX + 'user-'
 
-WRITE_CHUNK_SIZE = 65536
-READ_CHUNK_SIZE = 65536
-
-CONNECTION_TIMEOUT = 2
-CHUNK_TIMEOUT = 3
-CLIENT_TIMEOUT = 3
-
-PUT_QUEUE_DEPTH = 10
-
-container_headers = {
-    "size": "%ssys-m2-usage" % CONTAINER_METADATA_PREFIX,
-    "ns": "%ssys-ns" % CONTAINER_METADATA_PREFIX
-}
-
-object_headers = {
-    "name": "%sname" % OBJECT_METADATA_PREFIX,
-    "id": "%sid" % OBJECT_METADATA_PREFIX,
-    "policy": "%spolicy" % OBJECT_METADATA_PREFIX,
-    "version": "%sversion" % OBJECT_METADATA_PREFIX,
-    "size": "%slength" % OBJECT_METADATA_PREFIX,
-    "ctime": "%sctime" % OBJECT_METADATA_PREFIX,
-    "hash": "%shash" % OBJECT_METADATA_PREFIX,
-    "mime_type": "%smime-type" % OBJECT_METADATA_PREFIX,
-    "chunk_method": "%schunk-method" % OBJECT_METADATA_PREFIX
-}
-
-chunk_headers = {
-    "container_id": "%scontainer-id" % CHUNK_METADATA_PREFIX,
-    "chunk_id": "%schunk-id" % CHUNK_METADATA_PREFIX,
-    "chunk_hash": "%schunk-hash" % CHUNK_METADATA_PREFIX,
-    "chunk_size": "%schunk-size" % CHUNK_METADATA_PREFIX,
-    "chunk_pos": "%schunk-pos" % CHUNK_METADATA_PREFIX,
-    "content_size": "%scontent-size" % CHUNK_METADATA_PREFIX,
-    "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
-    "content_chunksnb": "%scontent-chunksnb" % CHUNK_METADATA_PREFIX,
-    "content_hash": "%scontent-hash" % CHUNK_METADATA_PREFIX,
-    "content_id": "%scontent-id" % CHUNK_METADATA_PREFIX,
-    "content_version": "%scontent-version" % CHUNK_METADATA_PREFIX,
-    "content_policy": "%scontent-storage-policy" % CHUNK_METADATA_PREFIX,
-    "content_mimetype": "%scontent-mime-type" % CHUNK_METADATA_PREFIX,
-    "content_chunkmethod": "%scontent-chunk-method" % CHUNK_METADATA_PREFIX,
-}
+def get_meta_ranges(ranges, chunks):
+    range_infos = []
+    meta_sizes = [c[0]['size'] for _p, c in chunks.iteritems()]
+    for obj_start, obj_end in ranges:
+        meta_ranges = obj_range_to_meta_chunk_range(obj_start, obj_end,
+                                                    meta_sizes)
+        range_infos += meta_ranges
+    return meta_ranges
 
 
 def handle_container_not_found(fnc):
@@ -109,28 +70,21 @@ def handle_object_not_found(fnc):
     return _wrapped
 
 
-def _sort_chunks(raw_chunks, rain_security):
+def _sort_chunks(raw_chunks, ec_security):
     chunks = dict()
     for chunk in raw_chunks:
         raw_position = chunk["pos"].split(".")
         position = int(raw_position[0])
-        if rain_security:
-            subposition = raw_position[1]
+        if ec_security:
+            chunk['num'] = int(raw_position[1])
         if position in chunks:
-            if rain_security:
-                chunks[position][subposition] = chunk
-            else:
-                chunks[position].append(chunk)
+            chunks[position].append(chunk)
         else:
-            if rain_security:
-                chunks[position] = dict()
-                chunks[position][subposition] = chunk
-            else:
-                chunks[position] = [chunk]
-    if not rain_security:
-        for clist in chunks.itervalues():
-            clist.sort(lambda x, y: cmp(x.get("score", 0), y.get("score", 0)),
-                       reverse=True)
+            chunks[position] = []
+            chunks[position].append(chunk)
+    for clist in chunks.itervalues():
+        clist.sort(lambda x, y: cmp(x.get("score", 0), y.get("score", 0)),
+                   reverse=True)
     return chunks
 
 
@@ -138,7 +92,7 @@ def _make_object_metadata(headers):
     meta = {}
     props = {}
 
-    prefix = OBJECT_METADATA_PREFIX
+    prefix = constants.OBJECT_METADATA_PREFIX
 
     for k, v in headers.iteritems():
         k = k.lower()
@@ -216,7 +170,8 @@ class ObjectStorageAPI(API):
         if metadata:
             headers_meta = {}
             for k, v in metadata.iteritems():
-                headers_meta['%suser-%s' % (CONTAINER_METADATA_PREFIX, k)] = v
+                headers_meta['%suser-%s' % (
+                    constants.CONTAINER_METADATA_PREFIX, k)] = v
             headers.update(headers_meta)
         resp, resp_body = self._request(
             'POST', uri, params=params, headers=headers)
@@ -370,8 +325,10 @@ class ObjectStorageAPI(API):
         if include_metadata:
             meta = {}
             for k, v in resp.headers.iteritems():
-                if k.lower().startswith(CONTAINER_USER_METADATA_PREFIX):
-                    meta[k[len(CONTAINER_USER_METADATA_PREFIX):]] = unquote(v)
+                if k.lower().startswith(
+                        constants.CONTAINER_USER_METADATA_PREFIX):
+                    meta[k[len(constants.CONTAINER_USER_METADATA_PREFIX):]] = \
+                        unquote(v)
             return meta, resp_body
 
         return resp_body
@@ -387,18 +344,19 @@ class ObjectStorageAPI(API):
                        reverse=True)
         return meta, resp_body
 
-    def object_fetch(self, account, container, obj, size=None, offset=0,
+    def object_fetch(self, account, container, obj, ranges=None,
                      headers=None):
         meta, raw_chunks = self.object_analyze(
             account, container, obj, headers=headers)
-        rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
-        chunks = _sort_chunks(raw_chunks, rain_security)
-        if rain_security:
-            stream = self._fetch_stream_rain(
-                meta, chunks, size, offset, headers=headers)
+        chunk_method = meta['chunk-method']
+        storage_method = STORAGE_METHODS.load(chunk_method)
+        chunks = _sort_chunks(raw_chunks, storage_method.ec)
+        if storage_method.ec:
+            stream = self._fetch_stream_ec(meta, chunks, ranges,
+                                           storage_method, headers)
         else:
-            stream = self._fetch_stream(
-                meta, chunks, size, offset, headers=headers)
+            stream = self._fetch_stream(meta, chunks, ranges, storage_method,
+                                        headers)
         return meta, stream
 
     @handle_object_not_found
@@ -493,29 +451,34 @@ class ObjectStorageAPI(API):
             'POST', uri, data=data, params=params, headers=headers)
         return resp.headers, resp_body
 
-    def _object_create(self, account, container, obj_name, src,
+    def _object_create(self, account, container, obj_name, source,
                        sysmeta, metadata=None, policy=None, headers=None):
         meta, raw_chunks = self._content_prepare(
             account, container, obj_name, sysmeta['content_length'],
             policy=policy, headers=headers)
 
+        sysmeta['chunk_size'] = int(meta['X-oio-ns-chunk-size'])
         sysmeta['id'] = meta[object_headers['id']]
         sysmeta['version'] = meta[object_headers['version']]
         sysmeta['policy'] = meta[object_headers['policy']]
         sysmeta['mime_type'] = meta[object_headers['mime_type']]
         sysmeta['chunk_method'] = meta[object_headers['chunk_method']]
 
-        rain_security = len(raw_chunks[0]["pos"].split(".")) == 2
+        storage_method = STORAGE_METHODS.load(sysmeta['chunk_method'])
 
-        chunks = _sort_chunks(raw_chunks, rain_security)
-        if rain_security:
-            final_chunks, bytes_transferred, content_checksum = \
-                self._put_stream_rain(account, container, obj_name,
-                                      src, sysmeta, chunks, headers=headers)
+        chunks = _sort_chunks(raw_chunks, storage_method.ec)
+        sysmeta['content_chunksnb'] = len(chunks)
+        sysmeta['content_path'] = obj_name
+        sysmeta['container_id'] = utils.name2cid(account, container)
+
+        if storage_method.ec:
+            handler = ECWriteHandler(source, sysmeta, chunks, storage_method,
+                                     headers=headers)
         else:
-            final_chunks, bytes_transferred, content_checksum = \
-                self._put_stream(account, container, obj_name, src,
-                                 sysmeta, chunks, headers=headers)
+            handler = ReplicatedWriteHandler(source, sysmeta, chunks,
+                                             storage_method, headers=headers)
+
+        final_chunks, bytes_transferred, content_checksum = handler.stream()
 
         etag = sysmeta['etag']
         if etag and etag.lower() != content_checksum.lower():
@@ -523,535 +486,53 @@ class ObjectStorageAPI(API):
                 "given etag %s != computed %s" % (etag, content_checksum))
         sysmeta['etag'] = content_checksum
 
-        hdrs = {}
-        hdrs[object_headers['size']] = bytes_transferred
-        hdrs[object_headers['hash']] = sysmeta['etag']
-        hdrs[object_headers['version']] = sysmeta['version']
-        hdrs[object_headers['id']] = sysmeta['id']
-        hdrs[object_headers['policy']] = sysmeta['policy']
-        hdrs[object_headers['mime_type']] = sysmeta['mime_type']
-        hdrs[object_headers['chunk_method']] = sysmeta['chunk_method']
+        h = {}
+        h[object_headers['size']] = bytes_transferred
+        h[object_headers['hash']] = sysmeta['etag']
+        h[object_headers['version']] = sysmeta['version']
+        h[object_headers['id']] = sysmeta['id']
+        h[object_headers['policy']] = sysmeta['policy']
+        h[object_headers['mime_type']] = sysmeta['mime_type']
+        h[object_headers['chunk_method']] = sysmeta['chunk_method']
 
         if metadata:
             for k, v in metadata.iteritems():
-                hdrs['%sx-%s' % (OBJECT_METADATA_PREFIX, k)] = v
+                h['%sx-%s' % (constants.OBJECT_METADATA_PREFIX, k)] = v
 
         m, body = self._content_create(account, container, obj_name,
-                                       final_chunks, headers=hdrs)
+                                       final_chunks, headers=h)
         return final_chunks, bytes_transferred, content_checksum
 
-    def _put_stream(self, account, container, obj_name, src, sysmeta, chunks,
-                    headers=None):
-        global_checksum = hashlib.md5()
-        total_bytes_transferred = 0
-        content_chunks = []
-
-        def _connect_put(chunk):
-            raw_url = chunk["url"]
-            parsed = urlparse(raw_url)
-            try:
-                chunk_path = parsed.path.split('/')[-1]
-                hdrs = {}
-                hdrs["transfer-encoding"] = "chunked"
-                hdrs[chunk_headers["content_id"]] = sysmeta['id']
-                hdrs[chunk_headers["content_version"]] = sysmeta['version']
-                hdrs[chunk_headers["content_path"]] = utils.quote(obj_name)
-                hdrs[chunk_headers["content_size"]] = sysmeta['content_length']
-                hdrs[chunk_headers["content_chunkmethod"]] = \
-                    sysmeta['chunk_method']
-                hdrs[chunk_headers["content_mimetype"]] = sysmeta['mime_type']
-                hdrs[chunk_headers["content_policy"]] = sysmeta['policy']
-                hdrs[chunk_headers["content_chunksnb"]] = len(chunks)
-                hdrs[chunk_headers["container_id"]] = \
-                    utils.name2cid(account, container)
-                hdrs[chunk_headers["chunk_pos"]] = chunk["pos"]
-                hdrs[chunk_headers["chunk_id"]] = chunk_path
-                with ConnectionTimeout(CONNECTION_TIMEOUT):
-                    conn = http_connect(
-                        parsed.netloc, 'PUT', parsed.path, hdrs)
-                    conn.chunk = chunk
-                return conn
-            except (Exception, Timeout):
-                pass
-
-        def _send_data(conn):
-            while True:
-                data = conn.queue.get()
-                if not conn.failed:
-                    try:
-                        with ChunkWriteTimeout(CHUNK_TIMEOUT):
-                            conn.send(data)
-                    except (Exception, ChunkWriteTimeout):
-                        conn.failed = True
-                conn.queue.task_done()
-
-        for pos in range(len(chunks)):
-            current_chunks = chunks[pos]
-
-            pile = GreenPile(len(current_chunks))
-
-            for current_chunk in current_chunks:
-                pile.spawn(_connect_put, current_chunk)
-
-            conns = [conn for conn in pile if conn]
-
-            min_conns = 1
-
-            if len(conns) < min_conns:
-                raise exc.OioException("RAWX connection failure")
-
-            bytes_transferred = 0
-            total_size = current_chunks[0]["size"]
-            chunk_checksum = hashlib.md5()
-            try:
-                with utils.ContextPool(len(current_chunks)) as pool:
-                    for conn in conns:
-                        conn.failed = False
-                        conn.queue = Queue(PUT_QUEUE_DEPTH)
-                        pool.spawn(_send_data, conn)
-
-                    while True:
-                        remaining_bytes = total_size - bytes_transferred
-                        if WRITE_CHUNK_SIZE < remaining_bytes:
-                            read_size = WRITE_CHUNK_SIZE
-                        else:
-                            read_size = remaining_bytes
-                        with ClientReadTimeout(CLIENT_TIMEOUT):
-                            try:
-                                data = src.read(read_size)
-                            except (ValueError, IOError) as e:
-                                raise SourceReadError(str(e))
-                            if len(data) == 0:
-                                for conn in conns:
-                                    conn.queue.put('0\r\n\r\n')
-                                break
-                        chunk_checksum.update(data)
-                        global_checksum.update(data)
-                        bytes_transferred += len(data)
-                        for conn in conns:
-                            if not conn.failed:
-                                conn.queue.put('%x\r\n%s\r\n' % (len(data),
-                                                                 data))
-                            else:
-                                conns.remove(conn)
-
-                        if len(conns) < min_conns:
-                            raise exc.OioException("RAWX write failure")
-
-                    for conn in conns:
-                        if conn.queue.unfinished_tasks:
-                            conn.queue.join()
-
-                conns = [conn for conn in conns if not conn.failed]
-
-            except SourceReadError:
-                raise
-            except ClientReadTimeout:
-                raise
-            except Timeout as e:
-                raise exc.OioTimeout(str(e))
-            except Exception as e:
-                raise exc.OioException(
-                    "Exception during chunk write %s" % str(e))
-
-            final_chunks = []
-            for conn in conns:
-                resp = conn.getresponse(True)
-                if resp.status in (200, 201):
-                    conn.chunk["size"] = bytes_transferred
-                    final_chunks.append(conn.chunk)
-                conn.close()
-            if len(final_chunks) < min_conns:
-                raise exc.OioException("RAWX write failure")
-
-            checksum = chunk_checksum.hexdigest()
-            for chunk in final_chunks:
-                chunk["hash"] = checksum
-            content_chunks += final_chunks
-            total_bytes_transferred += bytes_transferred
-
-        content_checksum = global_checksum.hexdigest()
-
-        return content_chunks, total_bytes_transferred, content_checksum
-
-    def _fetch_stream(self, meta, chunks, size, offset, headers=None):
-        current_offset = 0
+    def _fetch_stream(self, meta, chunks, ranges, storage_method, headers):
         total_bytes = 0
-        if size is None:
-            size = int(meta["length"])
-
-        for pos in range(len(chunks)):
-            chunk_size = int(chunks[pos][0]["size"])
-            if total_bytes >= size:
-                break
-            if current_offset + chunk_size > offset:
-                if current_offset < offset:
-                    _offset = offset - current_offset
-                else:
-                    _offset = 0
-                if chunk_size + total_bytes > size:
-                    _size = size - total_bytes
-                else:
-                    _size = chunk_size
-
-                handler = ChunkDownloadHandler(chunks[pos],
-                                               _size, _offset)
-                stream = handler.get_stream()
-                if not stream:
-                    raise exc.OioException("Error while downloading")
-                for s in stream:
-                    total_bytes += len(s)
-                    yield s
-            current_offset += chunk_size
-
-    def _put_stream_rain(self, account, container, obj_name, src, sysmeta,
-                         chunks, headers=None):
-        global_checksum = hashlib.md5()
-        total_bytes_transferred = 0
-        content_chunks = []
-        content_length = sysmeta['content_length']
-
-        def _encode_rawxlist(chunks_at_pos):
-            res_chunks = []
-            for subpos, c in chunks_at_pos.iteritems():
-                host = c['url'].split('/')[2]
-                chunk_id = c['url'].split('/')[-1]
-                res_chunks.append("%s/%s" % (host, chunk_id))
-            return '|'.join(res_chunks)
-
-        def _limit_stream(stream, size):
-            read_size = 0
-            while read_size < size:
-                to_read = size - read_size
-                if to_read > WRITE_CHUNK_SIZE:
-                    to_read = WRITE_CHUNK_SIZE
-                data = stream.read(to_read)
-                global_checksum.update(data)
-                read_size += to_read
-                yield data
-
-        def _decode_chunklist(chunklist):
-            res = []
-            for c in chunklist.split(';'):
-                pos, url, size, hash = c.split('|')
-                res.append({
-                    "url": "http://%s" % url,
-                    "pos": pos,
-                    "size": int(size),
-                    "hash": hash
-                })
-            return res
-
-        for pos in xrange(len(chunks)):
-            rainx_url = self._get_service_url("rainx")
-
-            chunk_size = chunks[pos][str(0)]['size']
-            remaining_bytes = content_length - total_bytes_transferred
-            if chunk_size > remaining_bytes:
-                chunk_size = remaining_bytes
-
-            headers = {}
-            headers["X-oio-chunk-meta-content-storage-policy"] = \
-                sysmeta['policy']
-            headers["X-oio-chunk-meta-rawxlist"] = \
-                _encode_rawxlist(chunks[pos])
-            headers[chunk_headers["content_id"]] = sysmeta['id']
-            headers[chunk_headers["content_version"]] = sysmeta['version']
-            headers[chunk_headers["content_path"]] = utils.quote(obj_name)
-            headers[chunk_headers["content_size"]] = sysmeta['content_length']
-            headers[chunk_headers["content_chunksnb"]] = len(chunks)
-            headers[chunk_headers["container_id"]] = \
-                utils.name2cid(account, container)
-            headers[chunk_headers["chunk_pos"]] = pos
-            headers[chunk_headers["chunk_size"]] = chunk_size
-            headers[chunk_headers["content_chunkmethod"]] = \
-                sysmeta['chunk_method']
-            headers[chunk_headers["content_mimetype"]] = sysmeta['mime_type']
-            headers[chunk_headers["content_policy"]] = sysmeta['policy']
-
-            resp = self.session.put(rainx_url,
-                                    data=_limit_stream(src, chunk_size),
-                                    headers=headers)
-            resp.raise_for_status()
-
-            content_chunks.extend(_decode_chunklist(resp.headers['chunklist']))
-
-            total_bytes_transferred += chunk_size
-
-        content_checksum = global_checksum.hexdigest()
-
-        return content_chunks, total_bytes_transferred, content_checksum
-
-    def _fetch_stream_rain(self, meta, chunks, size, offset, headers=None):
-        def get_rainx_addr():
-            return self._get_service_url("rainx")
-
-        downloader = RainDownloader(get_rainx_addr, meta, chunks)
-        for d in downloader.get_stream(offset, size):
-            yield d
-
-
-def close_source(source):
-    try:
-        source.conn.close()
-    except Exception:
-        pass
-
-
-class ChunkDownloadHandler(object):
-    def __init__(self, chunks, size, offset, headers=None):
-        self.chunks = chunks
-        self.failed_chunks = []
-
         headers = headers or {}
-        h_range = "bytes=%d-" % offset
-        end = None
-        if size >= 0:
-            end = (size + offset - 1)
-            h_range += str(end)
-        headers["Range"] = h_range
-        self.headers = headers
-        self.begin = offset
-        self.end = end
+        ranges = ranges or [(None, None)]
 
-    def get_stream(self):
-        source = self._get_chunk_source()
-        stream = None
-        if source:
-            stream = self._make_stream(source)
-        return stream
+        meta_ranges = get_meta_ranges(ranges, chunks)
 
-    def _fast_forward(self, nb_bytes):
-        self.begin += nb_bytes
-        if self.end and self.begin > self.end:
-            raise Exception('Requested Range Not Satisfiable')
-        h_range = 'bytes=%d-' % self.begin
-        if self.end:
-            h_range += str(self.end)
-        self.headers['Range'] = h_range
+        for pos, meta_range in meta_ranges.iteritems():
+            meta_start, meta_end = meta_range
+            reader = io.ChunkReader(iter(chunks[pos]), io.READ_CHUNK_SIZE,
+                                    headers)
+            it = reader.get_iter()
+            if not it:
+                raise exc.OioException("Error while downloading")
+            for part in it:
+                for d in part['iter']:
+                    total_bytes += len(d)
+                    yield d
 
-    def _get_chunk_source(self):
-        source = None
-        for chunk in self.chunks:
-            try:
-                with ConnectionTimeout(CONNECTION_TIMEOUT):
-                    raw_url = chunk["url"]
-                    parsed = urlparse(raw_url)
-                    conn = http_connect(parsed.netloc, 'GET', parsed.path,
-                                        self.headers)
-                source = conn.getresponse(True)
-                source.conn = conn
+    def _fetch_stream_ec(self, meta, chunks, ranges, storage_method, headers):
+        ranges = ranges or [(None, None)]
 
-            except (Timeout, Exception):
-                self.failed_chunks.append(chunk)
-                continue
-            if source.status not in (200, 206):
-                self.failed_chunks.append(chunk)
-                close_source(source)
-                source = None
-            else:
-                break
+        meta_ranges = get_meta_ranges(ranges, chunks)
 
-        return source
-
-    def _make_stream(self, source):
-        bytes_read = 0
-        try:
-            while True:
-                try:
-                    with ChunkReadTimeout(CHUNK_TIMEOUT):
-                        data = source.read(READ_CHUNK_SIZE)
-                        bytes_read += len(data)
-                except ChunkReadTimeout:
-                    self._fast_forward(bytes_read)
-                    new_source = self._get_chunk_source()
-                    if new_source:
-                        close_source(source)
-                        source = new_source
-                        bytes_read = 0
-                        continue
-                    else:
-                        raise
-                if not data:
-                    break
-                yield data
-        except ChunkReadTimeout:
-            # error while reading chunk
-            raise
-        except GeneratorExit:
-            # client premature stop
-            pass
-        except Exception:
-            # error
-            raise
-        finally:
-            close_source(source)
-
-
-class RainDownloader(object):
-    def __init__(self, get_rainx_addr, meta, chunks):
-        self.get_rainx_addr = get_rainx_addr
-        self.meta = meta
-        self._meta_extract_k()
-        self.chunks = chunks
-        self.session = requests.session()
-
-    def _meta_extract_k(self):
-        coding, params = self.meta["chunk-method"].split('?')
-        for param in params.split('&'):
-            key, value = param.split('=')
-            if key == 'k':
-                self.k = int(value)
-
-    def _get_sorted_chunks_at_metapos(self, metapos):
-        chunks_at_pos = self.chunks[metapos]
-        res = []
-        for subpos in xrange(len(chunks_at_pos)):
-            data_chunk = chunks_at_pos.get(str(subpos))
-            if data_chunk is None:
-                break
-            res.append(data_chunk)
-        for subpos in xrange(len(chunks_at_pos)):
-            parity_chunk = chunks_at_pos.get("p%d" % subpos)
-            if parity_chunk is None:
-                break
-            res.append(parity_chunk)
-        return res
-
-    def get_metachunk_size(self, metapos):
-        metachunk_size = 0
-        for subpos, subchunk in self.chunks[metapos].iteritems():
-            if subpos.startswith("p"):
-                continue
-            metachunk_size += subchunk["size"]
-        return metachunk_size
-
-    def get_stream(self, offset, size):
-        current_offset = 0
-        total_bytes = 0
-        if size is None:
-            size = int(self.meta["length"])
-
-        for metapos in range(len(self.chunks)):
-            metachunk_size = self.get_metachunk_size(metapos)
-
-            if total_bytes >= size:
-                break
-            if current_offset + metachunk_size > offset:
-                if current_offset < offset:
-                    _offset = offset - current_offset
-                else:
-                    _offset = 0
-                if metachunk_size + total_bytes > size:
-                    _size = size - total_bytes
-                else:
-                    _size = metachunk_size
-
-                for s in self.get_metachunk_stream(metapos, _size, _offset):
-                    total_bytes += len(s)
-                    yield s
-            current_offset += metachunk_size
-
-    def get_metachunk_stream(self, metapos, size, offset):
-        skip = 0
-
-        for chunk in self._get_sorted_chunks_at_metapos(metapos):
-            if ".p" in chunk["pos"]:
-                break  # all data chunks have been processed
-            if size == 0:
-                break  # no more data wanted
-            chunk_offset = offset - skip
-            if chunk_offset <= chunk["size"]:
-                chunk_to_read = chunk["size"] - chunk_offset
-                if chunk_to_read > size:
-                    chunk_to_read = size
-                headers = {
-                    "Range": "bytes=%d-%d" % (chunk_offset,
-                                              chunk_offset + chunk_to_read - 1)
-                }
-
-                try:
-                    resp = self.session.get(chunk["url"],
-                                            headers=headers, stream=True)
-                    resp.raise_for_status()
-                    for data in resp.iter_content(READ_CHUNK_SIZE):
-                        yield data
-                        offset += len(data)
-                        size -= len(data)
-                except RequestException:
-                    for data in self.get_rebuilt_stream(metapos, offset, size,
-                                                        broken_chunk=chunk):
-                        yield data
-                    return
-
-            skip += chunk["size"]
-
-    def _gen_rawx_list(self, chunks):
-        res_chunks = []
-        for c in chunks:
-            host = c['url'].split('/')[2]
-            chunk_id = c['url'].split('/')[-1]
-            res_chunks.append("%s/%s" % (host, chunk_id))
-        return '|'.join(res_chunks)
-
-    def _gen_spare_rawx_list(self, broken_chunks):
-        res = []
-        for c in broken_chunks:
-            if ".p" in c["pos"]:
-                broken_idx = self.k + int(c["pos"].split("p")[-1])
-            else:
-                broken_idx = int(c["pos"].split(".")[-1])
-            res.append("%s|%d|%s" % (c["url"], broken_idx, c["hash"]))
-        return ';'.join(res)
-
-    def get_rebuilt_stream(self, metapos, offset, size, broken_chunk=None):
-        chunks = self._get_sorted_chunks_at_metapos(metapos)
-        broken_chunks = []
-        for c in chunks:
-            if broken_chunks is not None and c["pos"] == broken_chunk["pos"]:
-                broken_chunks.append(c)
-                continue
-            status = True
-            try:
-                resp = self.session.head(c["url"])
-                if resp.status_code != 200:
-                    status = False
-            except Exception:
-                status = False
-            if not status:
-                broken_chunks.append(c)
-
-        headers = {}
-        headers["X-oio-chunk-meta-content-storage-policy"] = \
-            self.meta["policy"]
-        headers["X-oio-chunk-meta-rawxlist"] = \
-            self._gen_rawx_list(chunks)
-        headers["X-oio-chunk-meta-sparerawxlist"] = \
-            self._gen_spare_rawx_list(broken_chunks)
-        headers[chunk_headers["content_id"]] = 64 * '0'
-        headers[chunk_headers["content_version"]] = 0
-        headers[chunk_headers["content_path"]] = "xxx"
-        headers[chunk_headers["content_size"]] = 0
-        headers[chunk_headers["content_chunksnb"]] = 0
-        headers[chunk_headers["container_id"]] = 64 * '0'
-        headers[chunk_headers["chunk_pos"]] = 0
-        headers["X-oio-chunk-meta-chunk-size"] = \
-            self.get_metachunk_size(metapos)
-
-        rainx_addr = "%s%s" % (self.get_rainx_addr(), "on-the-fly")
-        resp = self.session.get(rainx_addr, headers=headers, stream=True)
-        if resp.status_code != 200:
-            raise exc.OioException("Error while rebuilding chunk on the fly")
-
-        cur_pos = 0
-        iter_data = resp.iter_content(READ_CHUNK_SIZE)
-        for data in iter_data:  # skip data to offset
-            if offset > cur_pos + len(data):
-                cur_pos += len(data)
-                continue  # skip data already read
-            data_offset = offset - cur_pos
-            d = data[data_offset:data_offset + size]
-            offset += len(d)
-            size -= len(d)
-            yield d
-            cur_pos += len(data)
+        for pos, meta_range in meta_ranges.iteritems():
+            meta_start, meta_end = meta_range
+            handler = ECChunkDownloadHandler(storage_method, chunks[pos],
+                                             meta_start, meta_end, headers)
+            stream = handler.get_stream()
+            for part_info in stream:
+                for d in part_info['iter']:
+                    yield d
+            stream.close()

@@ -81,3 +81,98 @@ def load_sds_conf(ns):
         return dict(parser.items(ns))
     else:
         return None
+
+
+def ranges_from_http_header(val):
+    if not val.startswith('bytes='):
+        raise ValueError('Invalid Range value: %s' % val)
+    ranges = []
+    for r in val[6:].split(','):
+        start, end = r.split('-', 1)
+        if start:
+            start = int(start)
+        else:
+            start = None
+        if end:
+            end = int(end)
+            if end < 0:
+                raise ValueError('Invalid byterange value: %s' % val)
+            elif start is not None and end < start:
+                raise ValueError('Invalid byterange value: %s' % val)
+        else:
+            end = None
+            if start is None:
+                raise ValueError('Invalid byterange value: %s' % val)
+        ranges.append((start, end))
+    return ranges
+
+
+def http_header_from_ranges(ranges):
+    s = 'bytes='
+    for i, (start, end) in enumerate(ranges):
+        if end:
+            if end < 0:
+                raise ValueError("Invalid range (%s, %s)" % (start, end))
+            elif start is not None and end < start:
+                raise ValueError("Invalid range (%s, %s)" % (start, end))
+        else:
+            if start is None:
+                raise ValueError("Invalid range (%s, %s)" % (start, end))
+
+        if start is not None:
+            s += str(start)
+        s += '-'
+
+        if end is not None:
+            s += str(end)
+        if i < len(ranges) - 1:
+            s += ','
+    return s
+
+
+def convert_ranges(ranges, length):
+    if length is None or not ranges or ranges == []:
+        return None
+    result = []
+    for r in ranges:
+        start, end = r
+        if start is None:
+            if end == 0:
+                # bytes=-0
+                continue
+            elif end > length:
+                # all content must be returned
+                result.append((0, length))
+            else:
+                result.append((length - end, length))
+            continue
+        if end is None:
+            if start < length:
+                result.append((start, length))
+            else:
+                # skip
+                continue
+        elif start < length:
+            result.append((start, min(end, length)))
+
+    return result
+
+
+class HeadersDict(dict):
+    def __init__(self, headers):
+        self.update(headers)
+
+    def update(self, data):
+        for k, v in data:
+            self[k.title()] = v
+
+    def __setitem__(self, k, v):
+        if v is None:
+            self.pop(k.title(), None)
+        return dict.__setitem__(self, k.title(), v)
+
+    def get(self, k, default=None):
+        return dict.get(self, k.title(), default)
+
+    def pop(self, k, default=None):
+        return dict.pop(self, k.title(), default)

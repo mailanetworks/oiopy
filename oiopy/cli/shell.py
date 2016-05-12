@@ -6,6 +6,7 @@ import logging
 from cliff import app
 
 import oiopy
+from oiopy import set_logger
 from oiopy import utils
 from oiopy.cli.commandmanager import CommandManager
 from oiopy.cli import clientmanager
@@ -39,6 +40,7 @@ class OpenIOShell(app.App):
         requests_log = logging.getLogger('requests')
 
         if self.options.debug:
+            set_logger()
             requests_log.setLevel(logging.DEBUG)
         else:
             requests_log.setLevel(logging.ERROR)
