@@ -217,18 +217,6 @@ class SaveObject(command.Command):
             metavar='<object>',
             help='Object to save'
         )
-        parser.add_argument(
-            '--size',
-            metavar='<size>',
-            type=int,
-            help='Number of bytes to fetch'
-        )
-        parser.add_argument(
-            '--offset',
-            metavar='<offset>',
-            type=int,
-            help='Fetch data from <offset>'
-        )
         return parser
 
     def take_action(self, parsed_args):
@@ -240,15 +228,11 @@ class SaveObject(command.Command):
         file = parsed_args.file
         if not file:
             file = obj
-        size = parsed_args.size
-        offset = parsed_args.offset
 
         meta, stream = self.app.client_manager.storage.object_fetch(
             self.app.client_manager.get_account(),
             container,
-            obj,
-            size=size,
-            offset=offset
+            obj
         )
         if not os.path.exists(os.path.dirname(file)):
             if len(os.path.dirname(file)) > 0:

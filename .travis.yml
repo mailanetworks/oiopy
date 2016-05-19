@@ -14,3 +14,8 @@ deploy:
   on:
     tags: true
     repo: open-io/oiopy
+addons:
+  apt:
+    packages:
+      - liberasurecode-dev
+      - liberasurecode1
