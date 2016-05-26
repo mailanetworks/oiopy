@@ -178,7 +178,7 @@ class ChunkReader(object):
                 source = conn.getresponse(True)
                 source.conn = conn
         except (Exception, Timeout):
-            logger.exception('Connection failed to %s', self.chunk)
+            logger.exception('Connection failed to %s', chunk)
             return False
         if source.status in (200, 206):
             self.status = source.status
