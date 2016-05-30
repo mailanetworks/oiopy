@@ -1,5 +1,591 @@
 import unittest
+import random
+from io import BytesIO
+from collections import defaultdict
+from cStringIO import StringIO
+from eventlet import Timeout, sleep
+from hashlib import md5
+from oiopy.fakes import set_http_connect, set_http_requests
+from oiopy.storage_method import STORAGE_METHODS
+from oiopy.ec import ECChunkWriteHandler, ECChunkDownloadHandler
+from oiopy import exceptions as exc
+from oiopy.utils import HeadersDict
+from oiopy.constants import chunk_headers
+
+
+CHUNK_SIZE = 1048576
+EMPTY_CHECKSUM = 'd41d8cd98f00b204e9800998ecf8427e'
+
+
+class FakeResponse(object):
+    def __init__(self, status, body='', headers=None, slow=0):
+        self.status = status
+        self.body = body
+        self.headers = HeadersDict(headers)
+        self.stream = BytesIO(body)
+        self.slow = slow
+
+    def getheader(self, name, default=None):
+        return self.headers.get(name, default)
+
+    def getheaders(self):
+        if 'Content-Length' not in self.headers:
+            self.headers['Content-Length'] = len(self.body)
+        return self.headers.items()
+
+    def _slow(self):
+        sleep(self.slow)
+
+    def read(self, amt=0):
+        if self.slow:
+            self._slow()
+        return self.stream.read(amt)
+
+
+def decode_chunked_body(raw_body):
+    body = ''
+    remaining = raw_body
+    trailers = {}
+    reading_trailers = False
+    while remaining:
+        if reading_trailers:
+            header, remaining = remaining.split('\r\n', 1)
+            if header:
+                header_key, header_value = header.split(':', 1)
+                trailers[header_key] = header_value
+        else:
+            # get the hexa_length
+            hexa_length, remaining = remaining.split('\r\n', 1)
+            length = int(hexa_length, 16)
+            if not length:
+                # reached the end
+                reading_trailers = True
+            else:
+                # get the body
+                body += remaining[:length]
+                # discard the \r\n
+                remaining = remaining[length + 2:]
+    return body, trailers
+
+
+def empty_stream():
+    return StringIO("")
 
 
 class TestEC(unittest.TestCase):
-    pass
+    def setUp(self):
+        self.chunk_method = 'ec/algo=isa_l_rs_vand,k=6,m=3'
+        storage_method = STORAGE_METHODS.load(self.chunk_method)
+        self.storage_method = storage_method
+        self.cid = \
+            '3E32B63E6039FD3104F63BFAE034FADAA823371DD64599A8779BA02B3439A268'
+        self.sysmeta = {
+            'id': '705229BB7F330500A65C3A49A3116B83',
+            'version': '1463998577463950',
+            'chunk_method': self.chunk_method,
+            'container_id': self.cid,
+            'policy': 'EC',
+            'content_path': 'test',
+        }
+        self._meta_chunk = [
+                {'url': 'http://127.0.0.1:7000/0', 'pos': '0.0', 'num': 0},
+                {'url': 'http://127.0.0.1:7001/1', 'pos': '0.1', 'num': 1},
+                {'url': 'http://127.0.0.1:7002/2', 'pos': '0.2', 'num': 2},
+                {'url': 'http://127.0.0.1:7003/3', 'pos': '0.3', 'num': 3},
+                {'url': 'http://127.0.0.1:7004/4', 'pos': '0.4', 'num': 4},
+                {'url': 'http://127.0.0.1:7005/5', 'pos': '0.5', 'num': 5},
+                {'url': 'http://127.0.0.1:7006/6', 'pos': '0.6', 'num': 6},
+                {'url': 'http://127.0.0.1:7007/7', 'pos': '0.7', 'num': 7},
+                {'url': 'http://127.0.0.1:7008/8', 'pos': '0.8', 'num': 8},
+        ]
+
+    def meta_chunk(self):
+        return self._meta_chunk
+
+    def checksum(self):
+        return md5()
+
+    def test_write_simple(self):
+        checksum = md5()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * nb
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            bytes_transferred, checksum, chunks = handler.stream(source, size)
+        self.assertEqual(len(chunks), nb)
+        self.assertEqual(bytes_transferred, 0)
+        self.assertEqual(checksum, EMPTY_CHECKSUM)
+
+    def test_write_exception(self):
+        checksum = self.checksum()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [500] * nb
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            self.assertRaises(exc.OioException, handler.stream, source, size)
+
+    def test_write_quorum_success(self):
+        checksum = self.checksum()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        quorum_size = self.storage_method.quorum
+        resps = [201] * quorum_size
+        resps += [500] * (nb - quorum_size)
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            bytes_transferred, checksum, chunks = handler.stream(source, size)
+        self.assertEqual(len(chunks), nb)
+
+        for i in range(quorum_size):
+            self.assertEqual(chunks[i].get('error'), None)
+        for i in xrange(quorum_size, nb):
+            self.assertEqual(chunks[i].get('error'), 'HTTP 500')
+
+        self.assertEqual(bytes_transferred, 0)
+        self.assertEqual(checksum, EMPTY_CHECKSUM)
+
+    def test_write_quorum_error(self):
+        checksum = self.checksum()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        quorum_size = self.storage_method.quorum
+        resps = [500] * quorum_size
+        resps += [201] * (nb - quorum_size)
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            self.assertRaises(exc.OioException, handler.stream, source, size)
+
+    def test_write_timeout(self):
+        checksum = self.checksum()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * (nb - 1)
+        resps.append(Timeout(1.0))
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            bytes_transferred, checksum, chunks = handler.stream(source, size)
+
+        self.assertEqual(len(chunks), nb)
+        for i in range(nb - 1):
+            self.assertEqual(chunks[i].get('error'), None)
+        self.assertEqual(chunks[nb - 1].get('error'), '1.0 second')
+
+        self.assertEqual(bytes_transferred, 0)
+        self.assertEqual(checksum, EMPTY_CHECKSUM)
+
+    def test_write_partial_exception(self):
+        checksum = self.checksum()
+        source = empty_stream()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * (nb - 1)
+        resps.append(Exception("failure"))
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            bytes_transferred, checksum, chunks = handler.stream(source, size)
+
+        self.assertEqual(len(chunks), nb)
+        for i in range(nb - 1):
+            self.assertEqual(chunks[i].get('error'), None)
+        self.assertEqual(chunks[nb - 1].get('error'), 'failure')
+
+        self.assertEqual(bytes_transferred, 0)
+        self.assertEqual(checksum, EMPTY_CHECKSUM)
+
+    def test_write_error_source(self):
+        class TestReader(object):
+            def read(self, size):
+                raise IOError('failure')
+
+        checksum = self.checksum()
+        source = TestReader()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * nb
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            self.assertRaises(exc.SourceReadError, handler.stream, source,
+                              size)
+
+    def test_write_timeout_source(self):
+        class TestReader(object):
+            def read(self, size):
+                raise Timeout(1.0)
+        checksum = self.checksum()
+        source = TestReader()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * nb
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            self.assertRaises(Timeout, handler.stream, source,
+                              size)
+
+    def test_write_exception_source(self):
+        class TestReader(object):
+            def read(self, size):
+                raise Exception('failure')
+        checksum = self.checksum()
+        source = TestReader()
+        size = CHUNK_SIZE * self.storage_method.ec_nb_data
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * nb
+        with set_http_connect(*resps):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            # TODO specialize exception
+            self.assertRaises(Exception, handler.stream, source,
+                              size)
+
+    def test_write_transfer(self):
+        checksum = self.checksum()
+        segment_size = self.storage_method.ec_segment_size
+        test_data = ('1234' * segment_size)[:-10]
+        size = len(test_data)
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        resps = [201] * nb
+        source = StringIO(test_data)
+
+        put_reqs = defaultdict(lambda: {'parts': []})
+
+        def cb_body(conn_id, part):
+            put_reqs[conn_id]['parts'].append(part)
+
+        with set_http_connect(*resps, cb_body=cb_body):
+            handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
+                                          checksum, self.storage_method)
+            bytes_transferred, checksum, chunks = handler.stream(source, size)
+
+        fragments = []
+
+        for conn_id, info in put_reqs.items():
+            body, trailers = decode_chunked_body(''.join(info['parts']))
+            fragments.append(body)
+            metachunk_size = int(trailers[chunk_headers['metachunk_size']])
+            self.assertEqual(metachunk_size, size)
+
+        self.assertEqual(len(fragments), nb)
+        fragment_size = self.storage_method.ec_fragment_size
+
+        # retrieve segments
+        frags = []
+        for frag in fragments:
+            data = [frag[x:x + fragment_size]
+                    for x in range(0, len(frag), fragment_size)]
+            frags.append(data)
+
+        fragments = zip(*frags)
+
+        final_data = ''
+        for frag in fragments:
+            self.assertEqual(len(frag), nb)
+            frag = list(frag)
+            final_data += self.storage_method.driver.decode(frag)
+
+        self.assertEqual(len(test_data), len(final_data))
+        self.assertEqual(test_data, final_data)
+
+    def _make_ec_chunks(self, data):
+        segment_size = self.storage_method.ec_segment_size
+
+        d = [data[x:x + segment_size]
+             for x in range(0, len(data), segment_size)]
+
+        fragments_data = []
+
+        for c in d:
+            fragments = self.storage_method.driver.encode(c)
+            if not fragments:
+                break
+            fragments_data.append(fragments)
+
+        ec_chunks = [''.join(frag) for frag in zip(*fragments_data)]
+        return ec_chunks
+
+    def test_read(self):
+        segment_size = self.storage_method.ec_segment_size
+
+        data = ('1234' * segment_size)[:-10]
+
+        d = [data[x:x + segment_size]
+             for x in range(0, len(data), segment_size)]
+
+        fragmented_data = []
+
+        for c in d:
+            fragments = self.storage_method.driver.encode(c)
+            if not fragments:
+                break
+            fragmented_data.append(fragments)
+
+        result = ''
+        for fragment_data in fragmented_data:
+            result += self.storage_method.driver.decode(
+                fragment_data)
+        self.assertEqual(len(data), len(result))
+        self.assertEqual(data, result)
+
+        chunk_fragments = list(zip(*fragmented_data))
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        self.assertEqual(len(chunk_fragments), nb)
+        chunks_resps = [(200, ''.join(chunk_fragments[i]))
+                        for i in range(self.storage_method.ec_nb_data)]
+        resps, body_iter = zip(*chunks_resps)
+
+        meta_start = None
+        meta_end = None
+        headers = {}
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(data)
+        with set_http_connect(*resps, body_iter=body_iter):
+            handler = ECChunkDownloadHandler(self.storage_method,
+                                             meta_chunk, meta_start,
+                                             meta_end, headers)
+            stream = handler.get_stream()
+            body = ''
+            for part in stream:
+                for body_chunk in part['iter']:
+                    body += body_chunk
+            self.assertEqual(len(data), len(body))
+            self.assertEqual(data, body)
+
+    def test_read_advanced(self):
+        segment_size = self.storage_method.ec_segment_size
+        test_data = ('1234' * segment_size)[:-657]
+
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        chunks = [
+            {'path': '/0'},
+            {'path': '/1'},
+            {'path': '/2'},
+            {'path': '/3'},
+            {'path': '/4'},
+            {'path': '/5'},
+            {'path': '/6'},
+            {'path': '/7'},
+            {'path': '/8'},
+        ]
+        responses = {
+                n['path']: FakeResponse(200, ec_chunks[i])
+                for i, n in enumerate(chunks)
+        }
+
+        def get_response(req):
+            return responses.pop(req['path'])
+
+        headers = {}
+        meta_start = None
+        meta_end = None
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(test_data)
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(self.storage_method,
+                                             meta_chunk, meta_start,
+                                             meta_end, headers)
+            stream = handler.get_stream()
+            for part in stream:
+                for x in part['iter']:
+                    pass
+
+        # nb_data requests
+        self.assertEqual(len(conn_record), self.storage_method.ec_nb_data)
+        # nb_parity remaining
+        self.assertEqual(len(responses), self.storage_method.ec_nb_parity)
+
+    def _make_ec_meta_resp(self, test_data=None):
+        segment_size = self.storage_method.ec_segment_size
+        test_data = test_data or \
+            ('1234' * segment_size)[:-random.randint(0, 1000)]
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        return test_data, ec_chunks
+
+    def test_read_range(self):
+        fragment_size = self.storage_method.ec_fragment_size
+
+        test_data, ec_chunks = self._make_ec_meta_resp()
+
+        part_size = len(ec_chunks[0])
+
+        headers = {
+            'Content-Length': fragment_size,
+            'Content-Type': 'text/plain',
+            'Content-Range': 'bytes 0-%s/%s' % (fragment_size - 1, part_size)}
+
+        responses = [
+            FakeResponse(206, ec_chunks[0][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[1][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[2][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[3][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[4][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[5][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[6][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[7][:fragment_size], headers),
+            FakeResponse(206, ec_chunks[8][:fragment_size], headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        meta_start = 1
+        meta_end = 4
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(test_data)
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(
+                self.storage_method, meta_chunk, meta_start, meta_end, headers)
+            stream = handler.get_stream()
+            for part in stream:
+                parts.append(part)
+                for x in part['iter']:
+                    data += x
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0]['start'], 1)
+        self.assertEqual(parts[0]['end'], 4)
+        self.assertEqual(data, '2341')
+        self.assertEqual(len(conn_record), self.storage_method.ec_nb_data)
+
+    def test_read_range_unsatisfiable(self):
+
+        responses = [
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+        ]
+
+        # unsatisfiable range responses
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        meta_start = None
+        meta_end = 10000000000
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = 1024
+
+        def consume_stream(stream):
+            for part in stream:
+                for x in part['iter']:
+                    pass
+
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(self.storage_method, meta_chunk,
+                                             meta_start, meta_end, headers)
+
+            # TODO specialize Exception here (UnsatisfiableRange)
+            self.assertRaises(exc.OioException, handler.get_stream)
+            self.assertEqual(len(conn_record), self.storage_method.ec_nb_data)
+        # TODO verify ranges
+
+    def test_read_timeout(self):
+        segment_size = self.storage_method.ec_segment_size
+        test_data = ('1234' * segment_size)[:-333]
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        headers = {}
+        responses = [
+            FakeResponse(200, ec_chunks[0], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[1], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[2], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[3], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[4], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[5], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[6], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[7], headers, slow=0.1),
+            FakeResponse(200, ec_chunks[8], headers, slow=0.1),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(test_data)
+        meta_start = None
+        meta_end = None
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(
+                self.storage_method, meta_chunk, meta_start, meta_end, headers,
+                read_timeout=0.05)
+            stream = handler.get_stream()
+            body = ''
+            for part in stream:
+                for body_chunk in part['iter']:
+                    body += body_chunk
+
+            self.assertNotEqual(md5(test_data).hexdigest(),
+                                md5(body).hexdigest())
+            self.assertEqual(len(conn_record), nb)
+
+        # TODO test log output
+        # TODO verify ranges
+
+    def test_read_timeout_resume(self):
+        segment_size = self.storage_method.ec_segment_size
+        test_data = ('1234' * segment_size)[:-333]
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        headers = {}
+        responses = [
+            FakeResponse(200, ec_chunks[0], headers, slow=0.05),
+            FakeResponse(200, ec_chunks[1], headers),
+            FakeResponse(200, ec_chunks[2], headers),
+            FakeResponse(200, ec_chunks[3], headers),
+            FakeResponse(200, ec_chunks[4], headers),
+            FakeResponse(200, ec_chunks[5], headers),
+            FakeResponse(200, ec_chunks[6], headers),
+            FakeResponse(200, ec_chunks[7], headers),
+            FakeResponse(200, ec_chunks[8], headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(test_data)
+        meta_start = None
+        meta_end = None
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(
+                self.storage_method, meta_chunk, meta_start, meta_end, headers,
+                read_timeout=0.01)
+            stream = handler.get_stream()
+            body = ''
+            for part in stream:
+                for body_chunk in part['iter']:
+                    body += body_chunk
+
+        self.assertEqual(len(conn_record), self.storage_method.ec_nb_data + 1)
+        self.assertEqual(md5(test_data).hexdigest(), md5(body).hexdigest())
+        # TODO test log output
+        # TODO verify ranges

@@ -41,13 +41,10 @@ chunk_headers = {
     "chunk_hash": "%schunk-hash" % CHUNK_METADATA_PREFIX,
     "chunk_size": "%schunk-size" % CHUNK_METADATA_PREFIX,
     "chunk_pos": "%schunk-pos" % CHUNK_METADATA_PREFIX,
-    "content_size": "%scontent-size" % CHUNK_METADATA_PREFIX,
-    "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
-    "content_chunksnb": "%scontent-chunksnb" % CHUNK_METADATA_PREFIX,
-    "content_hash": "%scontent-hash" % CHUNK_METADATA_PREFIX,
     "content_id": "%scontent-id" % CHUNK_METADATA_PREFIX,
-    "content_version": "%scontent-version" % CHUNK_METADATA_PREFIX,
-    "content_policy": "%scontent-storage-policy" % CHUNK_METADATA_PREFIX,
-    "content_mimetype": "%scontent-mime-type" % CHUNK_METADATA_PREFIX,
     "content_chunkmethod": "%scontent-chunk-method" % CHUNK_METADATA_PREFIX,
+    "content_policy": "%scontent-storage-policy" % CHUNK_METADATA_PREFIX,
+    "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
+    "content_version": "%scontent-version" % CHUNK_METADATA_PREFIX,
+    "metachunk_size": "%smetachunk-size" % CHUNK_METADATA_PREFIX
 }

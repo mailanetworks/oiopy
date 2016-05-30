@@ -24,7 +24,11 @@ def http_connect(host, method, path, headers=None):
     conn.putrequest(method, path)
     if headers:
         for header, value in headers.iteritems():
-            conn.putheader(header, str(value))
+            if isinstance(value, list):
+                for k in value:
+                    conn.putheader(header, str(k))
+            else:
+                conn.putheader(header, str(value))
     conn.endheaders()
     return conn
 
@@ -46,5 +50,11 @@ def parse_content_type(raw_content_type):
     return raw_content_type, param_list
 
 
+_content_range_pattern = re.compile(r'^bytes (\d+)-(\d+)/(\d+)$')
+
+
 def parse_content_range(raw_content_range):
-    pass
+    found = re.search(_content_range_pattern, raw_content_range)
+    if not found:
+        raise ValueError('invalid content-range %r' % (raw_content_range,))
+    return tuple(int(x) for x in found.groups())

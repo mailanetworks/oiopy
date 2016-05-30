@@ -159,12 +159,18 @@ def convert_ranges(ranges, length):
 
 
 class HeadersDict(dict):
-    def __init__(self, headers):
-        self.update(headers)
+    def __init__(self, headers, **kwargs):
+        if headers:
+            self.update(headers)
+        self.update(kwargs)
 
     def update(self, data):
-        for k, v in data:
-            self[k.title()] = v
+        if hasattr(data, 'keys'):
+            for key in data.keys():
+                self[key.title()] = data[key]
+        else:
+            for k, v in data:
+                self[k.title()] = v
 
     def __setitem__(self, k, v):
         if v is None:

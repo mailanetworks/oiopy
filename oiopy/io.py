@@ -112,7 +112,9 @@ class ChunkReader(object):
     """
     Reads a chunk
     """
-    def __init__(self, chunk_iter, buf_size, headers):
+    def __init__(self, chunk_iter, buf_size, headers,
+                 connection_timeout=None, response_timeout=None,
+                 read_timeout=None):
         self.chunk_iter = chunk_iter
         self.source = None
         # TODO deal with provided headers
@@ -122,6 +124,9 @@ class ChunkReader(object):
         self.status = None
         # buf size indicates the amount we data we yield
         self.buf_size = buf_size
+        self.connection_timeout = connection_timeout or CONNECTION_TIMEOUT
+        self.response_timeout = response_timeout or CHUNK_TIMEOUT
+        self.read_timeout = read_timeout or CHUNK_TIMEOUT
 
     def recover(self, nb_bytes):
         """
@@ -169,12 +174,12 @@ class ChunkReader(object):
     def _get_request(self, chunk):
         # connect to chunk
         try:
-            with ConnectionTimeout(CONNECTION_TIMEOUT):
+            with ConnectionTimeout(self.connection_timeout):
                 raw_url = chunk["url"]
                 parsed = urlparse(raw_url)
                 conn = http_connect(parsed.netloc, 'GET', parsed.path,
                                     self.request_headers)
-            with Timeout(CHUNK_TIMEOUT):
+            with Timeout(self.response_timeout):
                 source = conn.getresponse(True)
                 source.conn = conn
         except (Exception, Timeout):
@@ -259,7 +264,7 @@ class ChunkReader(object):
                 buf = ''
                 while True:
                     try:
-                        with ChunkReadTimeout(CHUNK_TIMEOUT):
+                        with ChunkReadTimeout(self.read_timeout):
                             data = part.read(READ_CHUNK_SIZE)
                             count += 1
                             buf += data
