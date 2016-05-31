@@ -19,7 +19,7 @@ def parse_chunk_method(chunk_method):
     if '/' in chunk_method:
         chunk_method, params = chunk_method.split('/', 1)
         params = params.split(',')
-        if len(params) > 1:
+        if len(params) >= 1:
             for p in params:
                 k, v = p.split('=', 1)
                 param_list[k] = v
@@ -59,9 +59,24 @@ class StorageMethod(object):
 
 
 class ReplicatedStorageMethod(StorageMethod):
+    def __init__(self, name, nb_copy):
+        super(ReplicatedStorageMethod, self).__init__(name=name, ec=True)
+
+        try:
+            self._nb_copy = int(nb_copy)
+        except (TypeError, ValueError):
+            raise exc.InvalidStorageMethod('Invalid %r nb_copy' %
+                                           nb_copy)
+        self._quorum = (self._nb_copy + 1) // 2
+
     @classmethod
     def build(cls, params):
-        return cls('repli')
+        nb_data = params.pop('nb_copy')
+        return cls('repli', nb_data)
+
+    @property
+    def quorum(self):
+        return self._quorum
 
 
 class ECStorageMethod(StorageMethod):

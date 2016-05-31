@@ -340,8 +340,6 @@ class ObjectStorageAPI(API):
         resp, resp_body = self._request(
             'GET', uri, params=params, headers=headers)
         meta = _make_object_metadata(resp.headers)
-        resp_body.sort(lambda x, y: cmp(x.get("score", 0), y.get("score", 0)),
-                       reverse=True)
         return meta, resp_body
 
     def object_fetch(self, account, container, obj, ranges=None,

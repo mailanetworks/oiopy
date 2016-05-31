@@ -1,75 +1,16 @@
 import unittest
 import random
-from io import BytesIO
-from collections import defaultdict
 from cStringIO import StringIO
-from eventlet import Timeout, sleep
+from collections import defaultdict
+from eventlet import Timeout
 from hashlib import md5
 from oiopy.fakes import set_http_connect, set_http_requests
 from oiopy.storage_method import STORAGE_METHODS
 from oiopy.ec import ECChunkWriteHandler, ECChunkDownloadHandler
 from oiopy import exceptions as exc
-from oiopy.utils import HeadersDict
 from oiopy.constants import chunk_headers
-
-
-CHUNK_SIZE = 1048576
-EMPTY_CHECKSUM = 'd41d8cd98f00b204e9800998ecf8427e'
-
-
-class FakeResponse(object):
-    def __init__(self, status, body='', headers=None, slow=0):
-        self.status = status
-        self.body = body
-        self.headers = HeadersDict(headers)
-        self.stream = BytesIO(body)
-        self.slow = slow
-
-    def getheader(self, name, default=None):
-        return self.headers.get(name, default)
-
-    def getheaders(self):
-        if 'Content-Length' not in self.headers:
-            self.headers['Content-Length'] = len(self.body)
-        return self.headers.items()
-
-    def _slow(self):
-        sleep(self.slow)
-
-    def read(self, amt=0):
-        if self.slow:
-            self._slow()
-        return self.stream.read(amt)
-
-
-def decode_chunked_body(raw_body):
-    body = ''
-    remaining = raw_body
-    trailers = {}
-    reading_trailers = False
-    while remaining:
-        if reading_trailers:
-            header, remaining = remaining.split('\r\n', 1)
-            if header:
-                header_key, header_value = header.split(':', 1)
-                trailers[header_key] = header_value
-        else:
-            # get the hexa_length
-            hexa_length, remaining = remaining.split('\r\n', 1)
-            length = int(hexa_length, 16)
-            if not length:
-                # reached the end
-                reading_trailers = True
-            else:
-                # get the body
-                body += remaining[:length]
-                # discard the \r\n
-                remaining = remaining[length + 2:]
-    return body, trailers
-
-
-def empty_stream():
-    return StringIO("")
+from tests.unit import empty_stream, decode_chunked_body, \
+    FakeResponse, CHUNK_SIZE, EMPTY_CHECKSUM
 
 
 class TestEC(unittest.TestCase):
@@ -102,11 +43,11 @@ class TestEC(unittest.TestCase):
     def meta_chunk(self):
         return self._meta_chunk
 
-    def checksum(self):
-        return md5()
+    def checksum(self, d=''):
+        return md5(d)
 
     def test_write_simple(self):
-        checksum = md5()
+        checksum = self.checksum()
         source = empty_stream()
         size = CHUNK_SIZE * self.storage_method.ec_nb_data
         nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
@@ -163,6 +104,7 @@ class TestEC(unittest.TestCase):
         with set_http_connect(*resps):
             handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
                                           checksum, self.storage_method)
+            # TODO use specialized Exception
             self.assertRaises(exc.OioException, handler.stream, source, size)
 
     def test_write_timeout(self):
@@ -271,6 +213,8 @@ class TestEC(unittest.TestCase):
                                           checksum, self.storage_method)
             bytes_transferred, checksum, chunks = handler.stream(source, size)
 
+        self.assertEqual(len(test_data), bytes_transferred)
+        self.assertEqual(checksum, self.checksum(test_data).hexdigest())
         fragments = []
 
         for conn_id, info in put_reqs.items():
@@ -543,8 +487,8 @@ class TestEC(unittest.TestCase):
                 for body_chunk in part['iter']:
                     body += body_chunk
 
-            self.assertNotEqual(md5(test_data).hexdigest(),
-                                md5(body).hexdigest())
+            self.assertNotEqual(self.checksum(test_data).hexdigest(),
+                                self.checksum(body).hexdigest())
             self.assertEqual(len(conn_record), nb)
 
         # TODO test log output
@@ -586,6 +530,7 @@ class TestEC(unittest.TestCase):
                     body += body_chunk
 
         self.assertEqual(len(conn_record), self.storage_method.ec_nb_data + 1)
-        self.assertEqual(md5(test_data).hexdigest(), md5(body).hexdigest())
+        self.assertEqual(self.checksum(test_data).hexdigest(),
+                         self.checksum(body).hexdigest())
         # TODO test log output
         # TODO verify ranges
