@@ -196,9 +196,9 @@ class ChunkReader(object):
 
     def _get_source(self):
         for chunk in self.chunk_iter:
-            # we can continue to iterate until we find a valid source
-            self._get_request(chunk)
-            break
+            # continue to iterate until we find a valid source
+            if self._get_request(chunk):
+                break
 
         if self.sources:
             source, chunk = self.sources.pop()

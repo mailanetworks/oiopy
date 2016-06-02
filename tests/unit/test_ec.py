@@ -6,7 +6,8 @@ from eventlet import Timeout
 from hashlib import md5
 from oiopy.fakes import set_http_connect, set_http_requests
 from oiopy.storage_method import STORAGE_METHODS
-from oiopy.ec import ECChunkWriteHandler, ECChunkDownloadHandler
+from oiopy.ec import ECChunkWriteHandler, ECChunkDownloadHandler, \
+    ECRebuildHandler
 from oiopy import exceptions as exc
 from oiopy.constants import chunk_headers
 from tests.unit import empty_stream, decode_chunked_body, \
@@ -199,6 +200,7 @@ class TestEC(unittest.TestCase):
         segment_size = self.storage_method.ec_segment_size
         test_data = ('1234' * segment_size)[:-10]
         size = len(test_data)
+        test_data_checksum = self.checksum(test_data).hexdigest()
         nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
         resps = [201] * nb
         source = StringIO(test_data)
@@ -207,6 +209,8 @@ class TestEC(unittest.TestCase):
 
         def cb_body(conn_id, part):
             put_reqs[conn_id]['parts'].append(part)
+
+        # TODO test headers
 
         with set_http_connect(*resps, cb_body=cb_body):
             handler = ECChunkWriteHandler(self.sysmeta, self.meta_chunk(),
@@ -221,7 +225,10 @@ class TestEC(unittest.TestCase):
             body, trailers = decode_chunked_body(''.join(info['parts']))
             fragments.append(body)
             metachunk_size = int(trailers[chunk_headers['metachunk_size']])
+            metachunk_hash = trailers[chunk_headers['metachunk_hash']]
             self.assertEqual(metachunk_size, size)
+
+            self.assertEqual(metachunk_hash, test_data_checksum)
 
         self.assertEqual(len(fragments), nb)
         fragment_size = self.storage_method.ec_fragment_size
@@ -242,7 +249,8 @@ class TestEC(unittest.TestCase):
             final_data += self.storage_method.driver.decode(frag)
 
         self.assertEqual(len(test_data), len(final_data))
-        self.assertEqual(test_data, final_data)
+        self.assertEqual(
+            test_data_checksum, self.checksum(final_data).hexdigest())
 
     def _make_ec_chunks(self, data):
         segment_size = self.storage_method.ec_segment_size
@@ -442,13 +450,56 @@ class TestEC(unittest.TestCase):
                 for x in part['iter']:
                     pass
 
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
         with set_http_requests(get_response) as conn_record:
             handler = ECChunkDownloadHandler(self.storage_method, meta_chunk,
                                              meta_start, meta_end, headers)
 
             # TODO specialize Exception here (UnsatisfiableRange)
             self.assertRaises(exc.OioException, handler.get_stream)
-            self.assertEqual(len(conn_record), self.storage_method.ec_nb_data)
+            self.assertEqual(len(conn_record), nb)
+        # TODO verify ranges
+
+    def test_read_404_resume(self):
+        segment_size = self.storage_method.ec_segment_size
+        test_data = ('1234' * segment_size)[:-333]
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        headers = {}
+        responses = [
+            FakeResponse(404, ec_chunks[0], headers),
+            FakeResponse(200, ec_chunks[1], headers),
+            FakeResponse(404, ec_chunks[2], headers),
+            FakeResponse(200, ec_chunks[3], headers),
+            FakeResponse(200, ec_chunks[4], headers),
+            FakeResponse(404, ec_chunks[5], headers),
+            FakeResponse(200, ec_chunks[6], headers),
+            FakeResponse(200, ec_chunks[7], headers),
+            FakeResponse(200, ec_chunks[8], headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(test_data)
+        meta_start = None
+        meta_end = None
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(
+                self.storage_method, meta_chunk, meta_start, meta_end, headers)
+            stream = handler.get_stream()
+            body = ''
+            for part in stream:
+                for body_chunk in part['iter']:
+                    body += body_chunk
+
+            self.assertEqual(self.checksum(test_data).hexdigest(),
+                             self.checksum(body).hexdigest())
+            self.assertEqual(len(conn_record),
+                             self.storage_method.ec_nb_data + 3)
+
+        # TODO test log output
         # TODO verify ranges
 
     def test_read_timeout(self):
@@ -534,3 +585,42 @@ class TestEC(unittest.TestCase):
                          self.checksum(body).hexdigest())
         # TODO test log output
         # TODO verify ranges
+
+    def test_rebuild(self):
+        test_data = ('1234' * self.storage_method.ec_segment_size)[:-777]
+
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        missing_chunk_body = ec_chunks.pop(1)
+
+        meta_chunk = self.meta_chunk()
+
+        missing_chunk = meta_chunk.pop(1)
+
+        headers = {}
+        responses = [
+            FakeResponse(200, ec_chunks[0], headers),
+            FakeResponse(200, ec_chunks[1], headers),
+            FakeResponse(200, ec_chunks[2], headers),
+            FakeResponse(200, ec_chunks[3], headers),
+            FakeResponse(200, ec_chunks[4], headers),
+            FakeResponse(200, ec_chunks[5], headers),
+            FakeResponse(200, ec_chunks[6], headers),
+            FakeResponse(200, ec_chunks[7], headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        missing = missing_chunk['num']
+        nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
+
+        with set_http_requests(get_response) as conn_record:
+            handler = ECRebuildHandler(
+                meta_chunk, missing, self.storage_method)
+            stream = handler.rebuild()
+            result = ''.join(stream)
+            self.assertEqual(len(result), len(missing_chunk_body))
+            self.assertEqual(self.checksum(result).hexdigest(),
+                             self.checksum(missing_chunk_body).hexdigest())
+            self.assertEqual(len(conn_record), nb - 1)

@@ -60,7 +60,7 @@ class StorageMethod(object):
 
 class ReplicatedStorageMethod(StorageMethod):
     def __init__(self, name, nb_copy):
-        super(ReplicatedStorageMethod, self).__init__(name=name, ec=True)
+        super(ReplicatedStorageMethod, self).__init__(name=name)
 
         try:
             self._nb_copy = int(nb_copy)
@@ -71,8 +71,8 @@ class ReplicatedStorageMethod(StorageMethod):
 
     @classmethod
     def build(cls, params):
-        nb_data = params.pop('nb_copy')
-        return cls('repli', nb_data)
+        nb_copy = params.pop('nb_copy')
+        return cls('repli', nb_copy)
 
     @property
     def quorum(self):

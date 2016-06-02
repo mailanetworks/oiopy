@@ -23,8 +23,8 @@ def http_connect(host, method, path, headers=None):
     conn.path = path
     conn.putrequest(method, path)
     if headers:
-        for header, value in headers.iteritems():
-            if isinstance(value, list):
+        for header, value in headers.items():
+            if isinstance(value, (list, tuple)):
                 for k in value:
                     conn.putheader(header, str(k))
             else:

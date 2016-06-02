@@ -46,5 +46,6 @@ chunk_headers = {
     "content_policy": "%scontent-storage-policy" % CHUNK_METADATA_PREFIX,
     "content_path": "%scontent-path" % CHUNK_METADATA_PREFIX,
     "content_version": "%scontent-version" % CHUNK_METADATA_PREFIX,
-    "metachunk_size": "%smetachunk-size" % CHUNK_METADATA_PREFIX
+    "metachunk_size": "%smetachunk-size" % CHUNK_METADATA_PREFIX,
+    "metachunk_hash": "%smetachunk-hash" % CHUNK_METADATA_PREFIX
 }

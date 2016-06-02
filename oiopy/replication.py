@@ -212,8 +212,8 @@ class ReplicatedWriteHandler(io.WriteHandler):
             # chunks are all identical
             # so take the first size
             size = meta_chunk[0]["size"]
-            handler = ReplicatedChunkWriteHandler(self.sysmeta, meta_chunk,
-                                                  global_checksum)
+            handler = ReplicatedChunkWriteHandler(
+                self.sysmeta, meta_chunk, global_checksum, self.storage_method)
             bytes_transferred, checksum, chunks = handler.stream(self.source,
                                                                  size)
             content_chunks += chunks

@@ -579,8 +579,10 @@ class ECWriter(object):
         h[chunk_headers["content_policy"]] = sysmeta['policy']
         h[chunk_headers["content_version"]] = sysmeta['version']
 
-        # we send the metachunk_size in the trailer
-        h["Trailer"] = chunk_headers["metachunk_size"]
+        # in the trailer
+        # metachunk_size & metachunk_hash
+        h["Trailer"] = (chunk_headers["metachunk_size"],
+                        chunk_headers["metachunk_hash"])
         with ConnectionTimeout(io.CONNECTION_TIMEOUT):
             conn = io.http_connect(
                 parsed.netloc, 'PUT', parsed.path, h)
@@ -631,12 +633,26 @@ class ECWriter(object):
         # it will be processed by the send coroutine
         self.queue.put(data)
 
-    def finish(self, metachunk_size):
+    def finish(self, metachunk_size, metachunk_hash):
         with ChunkWriteTimeout(io.CHUNK_TIMEOUT):
-            to_send = "%s:%s\r\n" % \
-                (chunk_headers['metachunk_size'], metachunk_size)
+            def add_header(s, k, v):
+                h = k.encode('ascii')
+                if hasattr(v, 'encode'):
+                    v = v.encode('latin-1')
+                elif isinstance(v, int):
+                    v = str(v).encode('ascii')
+                h += b': ' + v + '\r\n'
+                s += h
+                return s
+
+            to_send = ''
+            to_send = add_header(
+                to_send, chunk_headers['metachunk_size'], metachunk_size)
+            to_send = add_header(
+                to_send, chunk_headers['metachunk_hash'], metachunk_hash)
+            to_send += '\r\n'
+
             self.conn.send(to_send)
-            self.conn.send('\r\n')
 
     def getresponse(self):
         # read the HTTP response from the connection
@@ -733,12 +749,13 @@ class ECChunkWriteHandler(object):
                     bytes_transferred += len(data)
                     send(data)
 
-                # flush out any buffered data
+                # flush out buffered data
                 send('')
 
                 # finish writing
-                for writer in writers:
-                    writer.send('')
+                if bytes_transferred:
+                    for writer in writers:
+                        writer.send('')
 
                 # wait for write finish
                 for writer in writers:
@@ -746,13 +763,16 @@ class ECChunkWriteHandler(object):
 
                 # trailer headers
                 # metachunk size
+                # metachunk hash
+                metachunk_size = bytes_transferred
+                metachunk_hash = self.checksum.hexdigest()
+
                 for writer in writers:
-                    writer.finish(bytes_transferred)
+                    writer.finish(metachunk_size, metachunk_hash)
 
                 # wait for all data to be processed
                 for writer in writers:
                     writer.wait()
-                    writer.chunk['size'] = bytes_transferred
 
                 return bytes_transferred
 
@@ -809,7 +829,6 @@ class ECChunkWriteHandler(object):
             if resp:
                 if resp.status == 201:
                     # TODO check checksum in response
-                    # writer.checksum.hexdigest()
                     success_chunks.append(writer.chunk)
                 else:
                     writer.failed = True
@@ -883,6 +902,12 @@ class ECWriteHandler(io.WriteHandler):
             bytes_transferred, checksum, chunks = handler.stream(self.source,
                                                                  max_size)
 
+            # chunks checksum is the metachunk hash
+            # chunks size is the metachunk size
+            for chunk in chunks:
+                chunk['hash'] = checksum
+                chunk['size'] = bytes_transferred
+
             total_bytes_transferred += bytes_transferred
             # add the chunks to the content chunk list
             content_chunks += chunks
@@ -891,3 +916,89 @@ class ECWriteHandler(io.WriteHandler):
         content_checksum = global_checksum.hexdigest()
 
         return content_chunks, total_bytes_transferred, content_checksum
+
+
+class ECRebuildHandler(object):
+    def __init__(self, meta_chunk, missing, storage_method,
+                 connection_timeout=None, response_timeout=None,
+                 read_timeout=None):
+        self.meta_chunk = meta_chunk
+        self.missing = missing
+        self.storage_method = storage_method
+        self.connection_timeout = connection_timeout or io.CONNECTION_TIMEOUT
+        self.response_timeout = response_timeout or io.CHUNK_TIMEOUT
+        self.read_timeout = read_timeout or io.CHUNK_TIMEOUT
+
+    def _get_response(self, chunk, headers):
+        resp = None
+        parsed = urlparse(chunk['url'])
+        try:
+            with ConnectionTimeout(self.connection_timeout):
+                conn = io.http_connect(
+                    parsed.netloc, 'GET', parsed.path, headers)
+
+            with Timeout(self.response_timeout):
+                resp = conn.getresponse()
+            if resp.status != 200:
+                logger.warning('Invalid GET response from %s', chunk)
+                resp = None
+        except (Exception, Timeout):
+            logger.exception('ERROR fetching %s', chunk)
+        return resp
+
+    def rebuild(self):
+        pile = GreenPile(len(self.meta_chunk))
+
+        nb_data = self.storage_method.ec_nb_data
+
+        headers = {}
+        for chunk in self.meta_chunk:
+            pile.spawn(self._get_response, chunk, headers)
+
+        resps = []
+        for resp in pile:
+            if not resp:
+                continue
+            resps.append(resp)
+            if len(resps) >= self.storage_method.ec_nb_data:
+                break
+        else:
+            logger.error('Unable to read enough valid sources to rebuild')
+            raise exc.OioException('Unable to rebuild chunk')
+
+        rebuild_iter = self._make_rebuild_iter(resps[:nb_data])
+        return rebuild_iter
+
+    def _make_rebuild_iter(self, resps):
+        def _get_frag(resp):
+            buf = ''
+            remaining = self.storage_method.ec_fragment_size
+            while remaining:
+                d = resp.read(remaining)
+                if not d:
+                    break
+                remaining -= len(d)
+                buf += d
+            return buf
+
+        def frag_iter():
+            pile = GreenPile(len(resps))
+            while True:
+                for resp in resps:
+                    pile.spawn(_get_frag, resp)
+                try:
+                    with Timeout(self.read_timeout):
+                        frag = [frag for frag in pile]
+                except (Exception, Timeout):
+                    # TODO complete error message
+                    self.logger.exception('ERROR rebuilding')
+                    break
+                if not all(frag):
+                    break
+                rebuilt_frag = self._reconstruct(frag)
+                yield rebuilt_frag
+
+        return frag_iter()
+
+    def _reconstruct(self, frag):
+        return self.storage_method.driver.reconstruct(frag, [self.missing])[0]

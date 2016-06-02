@@ -41,7 +41,7 @@ def decode_chunked_body(raw_body):
         if reading_trailers:
             header, remaining = remaining.split('\r\n', 1)
             if header:
-                header_key, header_value = header.split(':', 1)
+                header_key, header_value = header.split(': ', 1)
                 trailers[header_key] = header_value
         else:
             # get the hexa_length
