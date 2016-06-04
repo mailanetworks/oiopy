@@ -108,6 +108,10 @@ class SourceReadError(OioException):
     pass
 
 
+class SourceReadTimeout(Timeout):
+    pass
+
+
 class ChunkWriteTimeout(Timeout):
     pass
 

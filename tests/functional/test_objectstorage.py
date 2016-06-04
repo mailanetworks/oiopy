@@ -1,11 +1,8 @@
 import uuid
-import os
 import requests
 import hashlib
 
-from testtools.testcase import ExpectedException
 
-from oiopy.exceptions import OioException
 from tests.functional.utils import FunctionalTestCase
 from oiopy.object_storage import ObjectStorageAPI
 from oiopy import exceptions
@@ -171,103 +168,3 @@ class TestObjectStorageFunctional(FunctionalTestCase):
         self.assertEqual(info['containers'], 2)
         self.assertTrue(info['ctime'])
         self.assertEqual(info['metadata'], {})
-
-    def _rain_test_download(self, data_size, broken_pos_list=[],
-                            data_range=None):
-        if len(self.conf['rawx']) < 10:
-            self.skipTest("Not enough rawx. "
-                          "Rain tests needs more than 10 rawx to run")
-
-        test_data = os.urandom(data_size)
-        object_name = "func-test-object-%s" % uuid.uuid4()
-        self.storage.object_create(self.account, self.container_name,
-                                   obj_name=object_name,
-                                   policy="RAIN",
-                                   data=test_data)
-
-        meta, raw_stream = self.storage.object_analyze(
-            self.account, self.container_name, object_name)
-
-        for c in raw_stream:
-            if c["pos"] in broken_pos_list:
-                resp = self.session.delete(c["url"])
-                resp.raise_for_status()
-
-        if data_range is None:
-            meta, stream = self.storage.object_fetch(
-                self.account, self.container_name, object_name)
-
-            test_data_hash = md5_data(test_data)
-        else:
-            begin, end = data_range
-            meta, stream = self.storage.object_fetch(
-                self.account, self.container_name, object_name,
-                offset=begin, size=end-begin)
-
-            test_data_hash = md5_data(test_data[begin:end])
-
-        data = "".join(stream)
-        data_hash = md5_data(data)
-        self.assertEqual(data_hash, test_data_hash)
-
-    def test_rain_fetch_object_0_b_without_broken_chunk(self):
-        self._rain_test_download(0)
-
-    def test_rain_fetch_object_0_b_with_broken_chunk_0_0(self):
-        self._rain_test_download(0, broken_pos_list=["0.0"])
-
-    def test_rain_fetch_object_1_b_without_broken_chunk(self):
-        self._rain_test_download(1)
-
-    def test_rain_fetch_object_1_b_with_broken_chunk_0_1_and_0_p0(self):
-        self._rain_test_download(1, broken_pos_list=["0.0", "0.p0"])
-
-    def test_rain_fetch_object_100_b_without_broken_chunk(self):
-        self._rain_test_download(100)
-
-    def test_rain_fetch_object_chunksize_b_without_broken_chunk(self):
-        self._rain_test_download(self.chunk_size)
-
-    def test_rain_fetch_object_chunksize_bytes_with_broken_chunk_0_5(self):
-        self._rain_test_download(self.chunk_size, broken_pos_list=["0.5"])
-
-    def test_rain_fetch_object_2xchunksize_b_without_broken_chunk(self):
-        self._rain_test_download(2 * self.chunk_size)
-
-    def test_rain_fetch_object_2xchksize_b_with_bc_0_1_a_1_5_a_1_p1(self):
-        self._rain_test_download(2 * self.chunk_size,
-                                 broken_pos_list=["0.1", "1.5", "1.p1"])
-
-    def test_rain_fetch_object_100_bytes_range_0_10_without_broken_chunk(self):
-        self._rain_test_download(100, data_range=(0, 10))
-
-    def test_rain_fetch_object_chunksize_b_range_end_without_broken_chk(self):
-        self._rain_test_download(
-            self.chunk_size,
-            data_range=(self.chunk_size - 30, self.chunk_size))
-
-    def test_rain_fetch_object_2xcksize_b_range_overlap_without_brkn_chk(self):
-        self._rain_test_download(
-            2 * self.chunk_size,
-            data_range=(self.chunk_size / 2, self.chunk_size + 1))
-
-    def test_rain_fetch_object_100_bytes_range_0_10_with_broken_chunks(self):
-        self._rain_test_download(100, data_range=(0, 10),
-                                 broken_pos_list=["0.0", "0.1"])
-
-    def test_rain_fetch_object_chunksize_b_range_end_with_broken_chunks(self):
-        self._rain_test_download(
-            self.chunk_size,
-            data_range=(self.chunk_size - 30, self.chunk_size),
-            broken_pos_list=["0.5", "0.p0"])
-
-    def test_rain_fetch_object_2xcksize_b_range_overlap_with_broken_chks(self):
-        self._rain_test_download(
-            2 * self.chunk_size,
-            data_range=(self.chunk_size / 2, self.chunk_size + 1),
-            broken_pos_list=["0.4", "0.p1", "1.0"])
-
-    def test_rain_fetch_object_not_enough_chunks(self):
-        with ExpectedException(OioException):
-            self._rain_test_download(self.chunk_size,
-                                     broken_pos_list=["0.0", "0.p0", "0.p1"])

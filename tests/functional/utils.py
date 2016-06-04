@@ -1,5 +1,5 @@
 from testtools import TestCase
-import json
+import yaml
 import os
 
 
@@ -9,12 +9,12 @@ class FunctionalTestCase(TestCase):
         self.load_config()
 
     def load_config(self):
-        default_conf_path = os.path.expanduser('~/.oio/sds/conf/test.conf')
+        default_conf_path = os.path.expanduser('~/.oio/sds/conf/test.yml')
         config_file = os.environ.get('SDS_TEST_CONFIG_FILE',
                                      default_conf_path)
         with open(config_file, 'r') as f:
-            self.conf = json.load(f)
-        self.proxyd_uri = self.conf['proxyd_uri']
+            self.conf = yaml.load(f)
+        self.proxyd_uri = 'http://%s' % self.conf['proxy']
         self.namespace = self.conf['namespace']
         self.account = self.conf['account']
         self.chunk_size = self.conf['chunk_size']

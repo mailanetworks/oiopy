@@ -21,8 +21,8 @@ from oiopy import utils
 from greenlet import GreenletExit
 from oiopy import exceptions as exc
 from oiopy.exceptions import ChunkReadTimeout, ChunkWriteTimeout, \
-    ConnectionTimeout
-from oiopy.http import http_connect, parse_content_range
+    ConnectionTimeout, SourceReadTimeout, SourceReadError
+from oiopy.http import parse_content_range
 from oiopy import io
 from oiopy.constants import chunk_headers
 
@@ -138,12 +138,17 @@ class ECChunkDownloadHandler(object):
     """
     Handles the download of an EC meta chunk
     """
-    def __init__(self, storage_method, chunks, meta_start, meta_end, headers):
+    def __init__(self, storage_method, chunks, meta_start, meta_end, headers,
+                 connection_timeout=None, response_timeout=None,
+                 read_timeout=None):
         self.storage_method = storage_method
         self.chunks = chunks
         self.meta_start = meta_start
         self.meta_end = meta_end
         self.headers = headers
+        self.connection_timeout = connection_timeout
+        self.response_timeout = response_timeout
+        self.read_timeout = read_timeout
 
     def _get_range_infos(self):
         """
@@ -179,7 +184,8 @@ class ECChunkDownloadHandler(object):
         # TODO generate proper headers
         headers = {}
         reader = io.ChunkReader(chunk_iter, storage_method.ec_fragment_size,
-                                headers)
+                                headers, self.connection_timeout,
+                                self.response_timeout, self.read_timeout)
         return (reader, reader.get_iter())
 
     def get_stream(self):
@@ -312,7 +318,7 @@ class ECStream(object):
                 # ignore
                 pass
             except ChunkReadTimeout:
-                logger.exception("Timeout on reading")
+                logger.error("Timeout on reading")
             except:
                 logger.exception("Exception on reading")
             finally:
@@ -395,6 +401,8 @@ class ECStream(object):
                 range_info['req_fragment_start'],
                 range_info['req_fragment_end'],
                 fragment_length)
+            range_info['resp_fragment_start'] = fragment_start
+            range_info['resp_fragment_end'] = fragment_end
 
     def _stream(self):
         if not self.range_infos:
@@ -428,6 +436,10 @@ class ECStream(object):
                 if content_range is not None:
                     fragment_start, fragment_end, fragment_length = \
                             parse_content_range(content_range)
+                elif self.fragment_length <= 0:
+                    fragment_start = None
+                    fragment_end = None
+                    fragment_length = 0
                 else:
                     fragment_start = 0
                     fragment_end = self.fragment_length - 1
@@ -559,29 +571,27 @@ class ECWriter(object):
     def connect(cls, chunk, sysmeta):
         raw_url = chunk["url"]
         parsed = urlparse(raw_url)
-        try:
-            chunk_path = parsed.path.split('/')[-1]
-            h = {}
-            h["transfer-encoding"] = "chunked"
-            h[chunk_headers["content_id"]] = sysmeta['id']
-            h[chunk_headers["content_version"]] = sysmeta['version']
-            h[chunk_headers["content_path"]] = \
-                utils.quote(sysmeta['content_path'])
-            h[chunk_headers["content_size"]] = sysmeta['content_length']
-            h[chunk_headers["content_chunkmethod"]] = sysmeta['chunk_method']
-            h[chunk_headers["content_mimetype"]] = sysmeta['mime_type']
-            h[chunk_headers["content_policy"]] = sysmeta['policy']
-            h[chunk_headers["content_chunksnb"]] = sysmeta['content_chunksnb']
-            h[chunk_headers["container_id"]] = sysmeta['container_id']
-            h[chunk_headers["chunk_pos"]] = chunk["pos"]
-            h[chunk_headers["chunk_id"]] = chunk_path
-            with ConnectionTimeout(io.CONNECTION_TIMEOUT):
-                conn = http_connect(
-                    parsed.netloc, 'PUT', parsed.path, h)
-                conn.chunk = chunk
-            return cls(chunk, conn)
-        except (Exception, Timeout):
-            logger.exception("Failed to connect to %s", chunk)
+        chunk_path = parsed.path.split('/')[-1]
+        h = {}
+        h["transfer-encoding"] = "chunked"
+        h[chunk_headers["content_id"]] = sysmeta['id']
+        h[chunk_headers["content_path"]] = sysmeta['content_path']
+        h[chunk_headers["content_chunkmethod"]] = sysmeta['chunk_method']
+        h[chunk_headers["container_id"]] = sysmeta['container_id']
+        h[chunk_headers["chunk_pos"]] = chunk["pos"]
+        h[chunk_headers["chunk_id"]] = chunk_path
+        h[chunk_headers["content_policy"]] = sysmeta['policy']
+        h[chunk_headers["content_version"]] = sysmeta['version']
+
+        # in the trailer
+        # metachunk_size & metachunk_hash
+        h["Trailer"] = (chunk_headers["metachunk_size"],
+                        chunk_headers["metachunk_hash"])
+        with ConnectionTimeout(io.CONNECTION_TIMEOUT):
+            conn = io.http_connect(
+                parsed.netloc, 'PUT', parsed.path, h)
+            conn.chunk = chunk
+        return cls(chunk, conn)
 
     def start(self, pool):
         # we use eventlet Queue to pass data to the send coroutine
@@ -597,20 +607,17 @@ class ECWriter(object):
             # use HTTP transfer encoding chunked
             # to write data to RAWX
             if not self.failed:
-                if len(d) == 0:
-                    # end of input
-                    # finish the transfer with a zero length chunk
-                    to_send = "0\r\n\r\n"
-                else:
-                    # format the chunk
-                    to_send = "%x\r\n%s\r\n" % (len(d), d)
+                # format the chunk
+                to_send = "%x\r\n%s\r\n" % (len(d), d)
                 try:
                     with ChunkWriteTimeout(io.CHUNK_TIMEOUT):
                         self.conn.send(to_send)
                         self.bytes_transferred += len(d)
-                except (Exception, ChunkWriteTimeout):
+                except (Exception, ChunkWriteTimeout) as e:
                     self.failed = True
-                    logger.exception("Failed to write to %s", self.chunk)
+                    msg = str(e)
+                    logger.warn("Failed to write to %s (%s)", self.chunk, msg)
+                    self.chunk['error'] = msg
 
             self.queue.task_done()
 
@@ -621,9 +628,25 @@ class ECWriter(object):
             self.queue.join()
 
     def send(self, data):
+        # do not send empty data because
+        # this will end the chunked body
+        if not data:
+            return
         # put the data to send into the queue
         # it will be processed by the send coroutine
         self.queue.put(data)
+
+    def finish(self, metachunk_size, metachunk_hash):
+        parts = [
+            '0\r\n',
+            '%s: %s\r\n' % (chunk_headers['metachunk_size'],
+                            metachunk_size),
+            '%s: %s\r\n' % (chunk_headers['metachunk_hash'],
+                            metachunk_hash),
+            '\r\n'
+        ]
+        to_send = "".join(parts)
+        self.conn.send(to_send)
 
     def getresponse(self):
         # read the HTTP response from the connection
@@ -641,17 +664,29 @@ class ECChunkWriteHandler(object):
 
     def stream(self, source, size):
         writers = self._get_writers()
+
+        failed_chunks = []
+        current_writers = []
+        for writer, chunk in writers:
+            if not writer:
+                failed_chunks.append(chunk)
+            else:
+                current_writers.append(writer)
         # write the data
-        bytes_transferred = self._stream(source, size, writers)
+        bytes_transferred = self._stream(source, size, current_writers)
 
-        # remove failed writers
-        writers = [w for w in writers if not w.failed]
+        # get the chunks from writers
+        chunks, quorum = self._get_results(current_writers)
 
-        # get the final chunks from writers
-        chunks = self._get_results(writers)
+        if not quorum:
+            logger.error('Quorum not reached during write')
+            raise exc.OioException('Write failure')
+
         meta_checksum = self.checksum.hexdigest()
 
-        return bytes_transferred, meta_checksum, chunks
+        final_chunks = chunks + failed_chunks
+
+        return bytes_transferred, meta_checksum, final_chunks
 
     def _stream(self, source, size, writers):
         bytes_transferred = 0
@@ -669,14 +704,16 @@ class ECChunkWriteHandler(object):
                 # not enough data given
                 return
 
-            for writer in list(writers):
+            current_writers = list(writers)
+            for writer in current_writers:
                 fragment = fragments[chunk_index[writer]]
                 if not writer.failed:
                     writer.checksum.update(fragment)
                     writer.send(fragment)
                 else:
-                    writers.remove(writer)
-            self._check_quorum(writers)
+                    current_writers.remove(writer)
+            self._check_quorum(current_writers)
+            # TODO handle no quorum
 
         try:
             # we use eventlet GreenPool to manage writers
@@ -696,35 +733,45 @@ class ECChunkWriteHandler(object):
                         read_size = io.WRITE_CHUNK_SIZE
                     else:
                         read_size = remaining_bytes
-                    with ChunkReadTimeout(io.CLIENT_TIMEOUT):
-                        data = source.read(read_size)
+                    with SourceReadTimeout(io.CLIENT_TIMEOUT):
+                        try:
+                            data = source.read(read_size)
+                        except (ValueError, IOError) as e:
+                            raise SourceReadError(str(e))
                     if len(data) == 0:
                         break
                     bytes_transferred += len(data)
                     send(data)
 
-                # flush out any buffered data
+                # flush out buffered data
                 send('')
-
-                # finish writing
-                for writer in writers:
-                    writer.send('')
 
                 # wait for all data to be processed
                 for writer in writers:
                     writer.wait()
-                    writer.chunk['size'] = bytes_transferred
+
+                # trailer headers
+                # metachunk size
+                # metachunk hash
+                metachunk_size = bytes_transferred
+                metachunk_hash = self.checksum.hexdigest()
+
+                for writer in writers:
+                    writer.finish(metachunk_size, metachunk_hash)
 
                 return bytes_transferred
 
-        except ChunkReadTimeout:
-            # TODO
+        except SourceReadTimeout:
+            logger.warn('Source read timeout')
+            raise
+        except SourceReadError:
+            logger.warn('Source read error')
             raise
         except Timeout:
-            # TODO
+            logger.exception('Timeout writing data')
             raise
         except Exception:
-            # TODO
+            logger.exception('Exception writing data')
             raise
 
     def _get_writers(self):
@@ -735,58 +782,63 @@ class ECChunkWriteHandler(object):
         for pos, chunk in enumerate(self.meta_chunk):
             pile.spawn(self._get_writer, chunk)
 
-        # remove None results in pile
-        writers = [w for w in pile if w]
+        writers = [w for w in pile]
         return writers
 
     def _get_writer(self, chunk):
         # spawn writer
         try:
             writer = ECWriter.connect(chunk, self.sysmeta)
-            return writer
-        except (Exception, Timeout):
-            logger.exception("Failed to connect to %s", chunk)
+            return writer, chunk
+        except (Exception, Timeout) as e:
+            msg = str(e)
+            logger.error("Failed to connect to %s (%s)", chunk, msg)
+            chunk['error'] = msg
+            return None, chunk
 
     def _get_results(self, writers):
         # get the results from writers
-        # we return the final chunks
-        final_chunks = []
+        success_chunks = []
+        failed_chunks = []
 
         # we use eventlet GreenPile to read the responses from the writers
         pile = GreenPile(len(writers))
 
         for writer in writers:
             if writer.failed:
+                failed_chunks.append(writer.chunk)
                 continue
             pile.spawn(self._get_response, writer)
 
         def _handle_resp(writer, resp):
-            resp.read()
-            if resp.status == 201:
-                # TODO check checksum
-                writer.chunk['hash'] = writer.checksum.hexdigest()
-                final_chunks.append(writer.chunk)
-            else:
-                writer.failed = True
-                logger.error("Wrong status code from %s (%s)",
-                             writer.chunk, resp.status)
+            if resp:
+                if resp.status == 201:
+                    # TODO check checksum in response
+                    success_chunks.append(writer.chunk)
+                else:
+                    writer.failed = True
+                    logger.error("Wrong status code from %s (%s)",
+                                 writer.chunk, resp.status)
+                    writer.chunk['error'] = 'HTTP %s' % resp.status
+                    failed_chunks.append(writer.chunk)
 
         for (writer, resp) in pile:
-            if resp:
-                _handle_resp(writer, resp)
-            else:
-                writer.failed = True
+            _handle_resp(writer, resp)
 
-        # TODO check quorum on responses
-        return final_chunks
+        quorum = self._check_quorum(success_chunks)
+
+        return success_chunks + failed_chunks, quorum
 
     def _get_response(self, writer):
         # spawned in a coroutine to read the HTTP response
         try:
             resp = writer.getresponse()
-        except (Exception, Timeout):
+        except (Exception, Timeout) as e:
             resp = None
-            logger.exception("Failed to read response %s", writer.chunk)
+            msg = str(e)
+            logger.warn("Failed to read response for %s (%s)", writer.chunk,
+                        msg)
+            writer.chunk['error'] = msg
         return (writer, resp)
 
     def _build_index(self, writers):
@@ -796,8 +848,7 @@ class ECChunkWriteHandler(object):
         return chunk_index
 
     def _check_quorum(self, writers):
-        if len(writers) < self.storage_method.quorum:
-            raise exc.OioException("Not enough valid RAWX connections")
+        return len(writers) >= self.storage_method.quorum
 
 
 class ECWriteHandler(io.WriteHandler):
@@ -836,6 +887,12 @@ class ECWriteHandler(io.WriteHandler):
             bytes_transferred, checksum, chunks = handler.stream(self.source,
                                                                  max_size)
 
+            # chunks checksum is the metachunk hash
+            # chunks size is the metachunk size
+            for chunk in chunks:
+                chunk['hash'] = checksum
+                chunk['size'] = bytes_transferred
+
             total_bytes_transferred += bytes_transferred
             # add the chunks to the content chunk list
             content_chunks += chunks
@@ -844,3 +901,89 @@ class ECWriteHandler(io.WriteHandler):
         content_checksum = global_checksum.hexdigest()
 
         return content_chunks, total_bytes_transferred, content_checksum
+
+
+class ECRebuildHandler(object):
+    def __init__(self, meta_chunk, missing, storage_method,
+                 connection_timeout=None, response_timeout=None,
+                 read_timeout=None):
+        self.meta_chunk = meta_chunk
+        self.missing = missing
+        self.storage_method = storage_method
+        self.connection_timeout = connection_timeout or io.CONNECTION_TIMEOUT
+        self.response_timeout = response_timeout or io.CHUNK_TIMEOUT
+        self.read_timeout = read_timeout or io.CHUNK_TIMEOUT
+
+    def _get_response(self, chunk, headers):
+        resp = None
+        parsed = urlparse(chunk['url'])
+        try:
+            with ConnectionTimeout(self.connection_timeout):
+                conn = io.http_connect(
+                    parsed.netloc, 'GET', parsed.path, headers)
+
+            with Timeout(self.response_timeout):
+                resp = conn.getresponse()
+            if resp.status != 200:
+                logger.warning('Invalid GET response from %s', chunk)
+                resp = None
+        except (Exception, Timeout):
+            logger.exception('ERROR fetching %s', chunk)
+        return resp
+
+    def rebuild(self):
+        pile = GreenPile(len(self.meta_chunk))
+
+        nb_data = self.storage_method.ec_nb_data
+
+        headers = {}
+        for chunk in self.meta_chunk:
+            pile.spawn(self._get_response, chunk, headers)
+
+        resps = []
+        for resp in pile:
+            if not resp:
+                continue
+            resps.append(resp)
+            if len(resps) >= self.storage_method.ec_nb_data:
+                break
+        else:
+            logger.error('Unable to read enough valid sources to rebuild')
+            raise exc.OioException('Unable to rebuild chunk')
+
+        rebuild_iter = self._make_rebuild_iter(resps[:nb_data])
+        return rebuild_iter
+
+    def _make_rebuild_iter(self, resps):
+        def _get_frag(resp):
+            buf = ''
+            remaining = self.storage_method.ec_fragment_size
+            while remaining:
+                d = resp.read(remaining)
+                if not d:
+                    break
+                remaining -= len(d)
+                buf += d
+            return buf
+
+        def frag_iter():
+            pile = GreenPile(len(resps))
+            while True:
+                for resp in resps:
+                    pile.spawn(_get_frag, resp)
+                try:
+                    with Timeout(self.read_timeout):
+                        frag = [frag for frag in pile]
+                except (Exception, Timeout):
+                    # TODO complete error message
+                    self.logger.exception('ERROR rebuilding')
+                    break
+                if not all(frag):
+                    break
+                rebuilt_frag = self._reconstruct(frag)
+                yield rebuilt_frag
+
+        return frag_iter()
+
+    def _reconstruct(self, frag):
+        return self.storage_method.driver.reconstruct(frag, [self.missing])[0]

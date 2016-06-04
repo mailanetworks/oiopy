@@ -1,4 +1,3 @@
-from cStringIO import StringIO
 import json
 from mock import MagicMock as Mock
 import random
@@ -12,10 +11,6 @@ from oiopy.constants import container_headers, object_headers
 from oiopy.object_storage import handle_object_not_found
 from oiopy.object_storage import handle_container_not_found
 from oiopy.object_storage import _sort_chunks
-
-
-def empty_stream():
-    return StringIO("")
 
 
 class ObjectStorageTest(unittest.TestCase):
