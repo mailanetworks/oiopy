@@ -16,7 +16,7 @@ from tests.unit import empty_stream, decode_chunked_body, \
 
 class TestEC(unittest.TestCase):
     def setUp(self):
-        self.chunk_method = 'ec/algo=liberasurecode_rs_vand,k=6,m=3'
+        self.chunk_method = 'ec/algo=liberasurecode_rs_vand,k=6,m=2'
         storage_method = STORAGE_METHODS.load(self.chunk_method)
         self.storage_method = storage_method
         self.cid = \
@@ -38,7 +38,6 @@ class TestEC(unittest.TestCase):
                 {'url': 'http://127.0.0.1:7005/5', 'pos': '0.5', 'num': 5},
                 {'url': 'http://127.0.0.1:7006/6', 'pos': '0.6', 'num': 6},
                 {'url': 'http://127.0.0.1:7007/7', 'pos': '0.7', 'num': 7},
-                {'url': 'http://127.0.0.1:7008/8', 'pos': '0.8', 'num': 8},
         ]
 
     def meta_chunk(self):
@@ -331,7 +330,6 @@ class TestEC(unittest.TestCase):
             {'path': '/5'},
             {'path': '/6'},
             {'path': '/7'},
-            {'path': '/8'},
         ]
         responses = {
                 n['path']: FakeResponse(200, ec_chunks[i])
@@ -377,7 +375,6 @@ class TestEC(unittest.TestCase):
         }
 
         responses = [
-            FakeResponse(200, '', headers),
             FakeResponse(200, '', headers),
             FakeResponse(200, '', headers),
             FakeResponse(200, '', headers),
@@ -433,7 +430,6 @@ class TestEC(unittest.TestCase):
             FakeResponse(206, ec_chunks[5][:fragment_size], headers),
             FakeResponse(206, ec_chunks[6][:fragment_size], headers),
             FakeResponse(206, ec_chunks[7][:fragment_size], headers),
-            FakeResponse(206, ec_chunks[8][:fragment_size], headers),
         ]
 
         def get_response(req):
@@ -473,7 +469,6 @@ class TestEC(unittest.TestCase):
             FakeResponse(416),
             FakeResponse(416),
             FakeResponse(416),
-            FakeResponse(416),
         ]
 
         # unsatisfiable range responses
@@ -504,16 +499,16 @@ class TestEC(unittest.TestCase):
         ec_chunks = self._make_ec_chunks(test_data)
 
         headers = {}
+        # add 2 failures
         responses = [
             FakeResponse(404, '', headers),
             FakeResponse(200, ec_chunks[1], headers),
-            FakeResponse(404, '', headers),
+            FakeResponse(200, ec_chunks[2], headers),
             FakeResponse(200, ec_chunks[3], headers),
             FakeResponse(200, ec_chunks[4], headers),
             FakeResponse(404, '', headers),
             FakeResponse(200, ec_chunks[6], headers),
             FakeResponse(200, ec_chunks[7], headers),
-            FakeResponse(200, ec_chunks[8], headers),
         ]
 
         def get_response(req):
@@ -535,7 +530,7 @@ class TestEC(unittest.TestCase):
             self.assertEqual(self.checksum(test_data).hexdigest(),
                              self.checksum(body).hexdigest())
             self.assertEqual(len(conn_record),
-                             self.storage_method.ec_nb_data + 3)
+                             self.storage_method.ec_nb_data + 2)
 
         # TODO test log output
         # TODO verify ranges
@@ -555,7 +550,6 @@ class TestEC(unittest.TestCase):
             FakeResponse(200, ec_chunks[5], headers, slow=0.1),
             FakeResponse(200, ec_chunks[6], headers, slow=0.1),
             FakeResponse(200, ec_chunks[7], headers, slow=0.1),
-            FakeResponse(200, ec_chunks[8], headers, slow=0.1),
         ]
 
         def get_response(req):
@@ -598,7 +592,6 @@ class TestEC(unittest.TestCase):
             FakeResponse(200, ec_chunks[5], headers),
             FakeResponse(200, ec_chunks[6], headers),
             FakeResponse(200, ec_chunks[7], headers),
-            FakeResponse(200, ec_chunks[8], headers),
         ]
 
         def get_response(req):
@@ -644,7 +637,6 @@ class TestEC(unittest.TestCase):
             FakeResponse(200, ec_chunks[4], headers),
             FakeResponse(200, ec_chunks[5], headers),
             FakeResponse(200, ec_chunks[6], headers),
-            FakeResponse(200, ec_chunks[7], headers),
         ]
 
         def get_response(req):
@@ -661,4 +653,111 @@ class TestEC(unittest.TestCase):
             self.assertEqual(len(result), len(missing_chunk_body))
             self.assertEqual(self.checksum(result).hexdigest(),
                              self.checksum(missing_chunk_body).hexdigest())
+            self.assertEqual(len(conn_record), nb - 1)
+
+    def test_rebuild_errors(self):
+        test_data = ('1234' * self.storage_method.ec_segment_size)[:-777]
+
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        # break one data chunk
+        missing_chunk_body = ec_chunks.pop(4)
+
+        meta_chunk = self.meta_chunk()
+
+        missing_chunk = meta_chunk.pop(4)
+
+        # add also error on another chunk
+        for error in (Timeout(), 404, Exception('failure')):
+            headers = {}
+            base_responses = list()
+
+            for ec_chunk in ec_chunks:
+                base_responses.append(FakeResponse(200, ec_chunk, headers))
+            responses = base_responses
+            error_idx = random.randint(0, len(responses) - 1)
+            responses[error_idx] = FakeResponse(error, '', {})
+
+            def get_response(req):
+                return responses.pop(0) if responses else FakeResponse(404)
+
+            missing = missing_chunk['num']
+            nb = self.storage_method.ec_nb_data +\
+                self.storage_method.ec_nb_parity
+
+            with set_http_requests(get_response) as conn_record:
+                handler = ECRebuildHandler(
+                    meta_chunk, missing, self.storage_method)
+                stream = handler.rebuild()
+                result = ''.join(stream)
+                self.assertEqual(len(result), len(missing_chunk_body))
+                self.assertEqual(self.checksum(result).hexdigest(),
+                                 self.checksum(missing_chunk_body).hexdigest())
+                self.assertEqual(len(conn_record), nb - 1)
+
+    def test_rebuild_parity_errors(self):
+        test_data = ('1234' * self.storage_method.ec_segment_size)[:-777]
+
+        ec_chunks = self._make_ec_chunks(test_data)
+
+        # break one parity chunk
+        missing_chunk_body = ec_chunks.pop(-1)
+
+        meta_chunk = self.meta_chunk()
+
+        missing_chunk = meta_chunk.pop(-1)
+
+        # add also error on another chunk
+        for error in (Timeout(), 404, Exception('failure')):
+            headers = {}
+            base_responses = list()
+
+            for ec_chunk in ec_chunks:
+                base_responses.append(FakeResponse(200, ec_chunk, headers))
+            responses = base_responses
+            error_idx = random.randint(0, len(responses) - 1)
+            responses[error_idx] = FakeResponse(error, '', {})
+
+            def get_response(req):
+                return responses.pop(0) if responses else FakeResponse(404)
+
+            missing = missing_chunk['num']
+            nb = self.storage_method.ec_nb_data +\
+                self.storage_method.ec_nb_parity
+
+            with set_http_requests(get_response) as conn_record:
+                handler = ECRebuildHandler(
+                    meta_chunk, missing, self.storage_method)
+                stream = handler.rebuild()
+                result = ''.join(stream)
+                self.assertEqual(len(result), len(missing_chunk_body))
+                self.assertEqual(self.checksum(result).hexdigest(),
+                                 self.checksum(missing_chunk_body).hexdigest())
+                self.assertEqual(len(conn_record), nb - 1)
+
+    def test_rebuild_failure(self):
+        meta_chunk = self.meta_chunk()
+
+        missing_chunk = meta_chunk.pop(1)
+
+        nb = self.storage_method.ec_nb_data +\
+            self.storage_method.ec_nb_parity
+
+        # add errors on other chunks
+        errors = [Timeout(), 404, Exception('failure')]
+        responses = [FakeResponse(random.choice(errors), '', {}) for i in
+                     range(nb - 1)]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        missing = missing_chunk['num']
+        nb = self.storage_method.ec_nb_data +\
+            self.storage_method.ec_nb_parity
+
+        with set_http_requests(get_response) as conn_record:
+            handler = ECRebuildHandler(
+                meta_chunk, missing, self.storage_method)
+            # TODO use specialized exception
+            self.assertRaises(exc.OioException, handler.rebuild)
             self.assertEqual(len(conn_record), nb - 1)
