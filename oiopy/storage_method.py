@@ -78,6 +78,10 @@ class ReplicatedStorageMethod(StorageMethod):
     def quorum(self):
         return self._quorum
 
+    @property
+    def nb_copy(self):
+        return self._nb_copy
+
 
 class ECStorageMethod(StorageMethod):
     def __init__(self, name, ec_segment_size, ec_type, ec_nb_data,

@@ -436,6 +436,10 @@ class ECStream(object):
                 if content_range is not None:
                     fragment_start, fragment_end, fragment_length = \
                             parse_content_range(content_range)
+                elif self.fragment_length <= 0:
+                    fragment_start = None
+                    fragment_end = None
+                    fragment_length = 0
                 else:
                     fragment_start = 0
                     fragment_end = self.fragment_length - 1
@@ -603,13 +607,8 @@ class ECWriter(object):
             # use HTTP transfer encoding chunked
             # to write data to RAWX
             if not self.failed:
-                if len(d) == 0:
-                    # end of input
-                    # finish the body with a zero length chunk
-                    to_send = "0\r\n"
-                else:
-                    # format the chunk
-                    to_send = "%x\r\n%s\r\n" % (len(d), d)
+                # format the chunk
+                to_send = "%x\r\n%s\r\n" % (len(d), d)
                 try:
                     with ChunkWriteTimeout(io.CHUNK_TIMEOUT):
                         self.conn.send(to_send)
@@ -629,30 +628,25 @@ class ECWriter(object):
             self.queue.join()
 
     def send(self, data):
+        # do not send empty data because
+        # this will end the chunked body
+        if not data:
+            return
         # put the data to send into the queue
         # it will be processed by the send coroutine
         self.queue.put(data)
 
     def finish(self, metachunk_size, metachunk_hash):
-        with ChunkWriteTimeout(io.CHUNK_TIMEOUT):
-            def add_header(s, k, v):
-                h = k.encode('ascii')
-                if hasattr(v, 'encode'):
-                    v = v.encode('latin-1')
-                elif isinstance(v, int):
-                    v = str(v).encode('ascii')
-                h += b': ' + v + '\r\n'
-                s += h
-                return s
-
-            to_send = ''
-            to_send = add_header(
-                to_send, chunk_headers['metachunk_size'], metachunk_size)
-            to_send = add_header(
-                to_send, chunk_headers['metachunk_hash'], metachunk_hash)
-            to_send += '\r\n'
-
-            self.conn.send(to_send)
+        parts = [
+            '0\r\n',
+            '%s: %s\r\n' % (chunk_headers['metachunk_size'],
+                            metachunk_size),
+            '%s: %s\r\n' % (chunk_headers['metachunk_hash'],
+                            metachunk_hash),
+            '\r\n'
+        ]
+        to_send = "".join(parts)
+        self.conn.send(to_send)
 
     def getresponse(self):
         # read the HTTP response from the connection
@@ -752,12 +746,7 @@ class ECChunkWriteHandler(object):
                 # flush out buffered data
                 send('')
 
-                # finish writing
-                if bytes_transferred:
-                    for writer in writers:
-                        writer.send('')
-
-                # wait for write finish
+                # wait for all data to be processed
                 for writer in writers:
                     writer.wait()
 
@@ -769,10 +758,6 @@ class ECChunkWriteHandler(object):
 
                 for writer in writers:
                     writer.finish(metachunk_size, metachunk_hash)
-
-                # wait for all data to be processed
-                for writer in writers:
-                    writer.wait()
 
                 return bytes_transferred
 

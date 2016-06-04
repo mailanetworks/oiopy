@@ -124,6 +124,7 @@ class ChunkReader(object):
         self.status = None
         # buf size indicates the amount we data we yield
         self.buf_size = buf_size
+        self.discard_bytes = 0
         self.connection_timeout = connection_timeout or CONNECTION_TIMEOUT
         self.response_timeout = response_timeout or CHUNK_TIMEOUT
         self.read_timeout = read_timeout or CHUNK_TIMEOUT
@@ -215,6 +216,9 @@ class ChunkReader(object):
         """
         Fill the request ranges.
         """
+        if length == 0:
+            return
+
         if self.buf_size:
             # discard bytes
             # so we only yield complete EC segments
@@ -317,11 +321,16 @@ class ChunkReader(object):
                             break
 
                         # buffer to read_size
-                        while len(buf) >= read_size:
-                            read_d = buf[:read_size]
-                            buf = buf[read_size:]
-                            yield read_d
-                            bytes_consumed += len(read_d)
+                        if read_size is not None:
+                            while len(buf) >= read_size:
+                                read_d = buf[:read_size]
+                                buf = buf[read_size:]
+                                yield read_d
+                                bytes_consumed += len(read_d)
+                        else:
+                            yield buf
+                            bytes_consumed += len(buf)
+                            buf = ''
 
                         # avoid starvation by forcing sleep()
                         # every once in a while

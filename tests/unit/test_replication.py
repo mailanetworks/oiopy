@@ -4,11 +4,12 @@ from cStringIO import StringIO
 from hashlib import md5
 from eventlet import Timeout
 from oiopy import exceptions as exc
-from oiopy.fakes import set_http_connect
+from oiopy.fakes import set_http_connect, set_http_requests
 from oiopy.replication import ReplicatedChunkWriteHandler
 from oiopy.storage_method import STORAGE_METHODS
 from tests.unit import CHUNK_SIZE, EMPTY_CHECKSUM, empty_stream, \
-    decode_chunked_body
+    decode_chunked_body, FakeResponse
+from oiopy import io
 
 
 class TestReplication(unittest.TestCase):
@@ -230,3 +231,227 @@ class TestReplication(unittest.TestCase):
         for body in bodies:
             self.assertEqual(len(test_data), len(body))
             self.assertEqual(self.checksum(body).hexdigest(), final_checksum)
+
+    def test_read(self):
+        test_data = ('1234' * 1024)[:-10]
+        data_checksum = self.checksum(test_data).hexdigest()
+        meta_chunk = self.meta_chunk()
+
+        responses = [
+            FakeResponse(200, test_data),
+            FakeResponse(200, test_data),
+            FakeResponse(200, test_data),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers)
+            it = reader.get_iter()
+            for part in it:
+                parts.append(part)
+                for d in part['iter']:
+                    data += d
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(len(test_data), len(data))
+        self.assertEqual(data_checksum, self.checksum(data).hexdigest())
+        self.assertEqual(len(conn_record), 1)
+
+    def test_read_zero_byte(self):
+        test_data = ''
+        data_checksum = self.checksum(test_data).hexdigest()
+        meta_chunk = self.meta_chunk()
+
+        responses = [
+            FakeResponse(200, test_data),
+            FakeResponse(200, test_data),
+            FakeResponse(200, test_data),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers)
+            it = reader.get_iter()
+            for part in it:
+                parts.append(part)
+                for d in part['iter']:
+                    data += d
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(len(test_data), len(data))
+        self.assertEqual(data_checksum, self.checksum(data).hexdigest())
+        self.assertEqual(len(conn_record), 1)
+
+    def test_read_range(self):
+        test_data = ('1024' * 1024)[:-10]
+        meta_chunk = self.meta_chunk()
+
+        meta_start = 1
+        meta_end = 4
+
+        part_data = test_data[meta_start:meta_end+1]
+        headers = {
+                'Content-Length': str(len(part_data)),
+                'Content-Type': 'text/plain',
+                'Content-Range': 'bytes %s-%s/%s' %
+                (meta_start, meta_end, len(test_data))
+        }
+
+        responses = [
+            FakeResponse(206, part_data, headers),
+            FakeResponse(206, part_data, headers),
+            FakeResponse(206, part_data, headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {'Range': 'bytes=%s-%s' % (meta_start, meta_end)}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers)
+            it = reader.get_iter()
+            for part in it:
+                parts.append(part)
+                for d in part['iter']:
+                    data += d
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0]['start'], 1)
+        self.assertEqual(parts[0]['end'], 4)
+        self.assertEqual(len(part_data), len(data))
+        self.assertEqual(len(conn_record), 1)
+
+    def test_read_range_unsatisfiable(self):
+        responses = [
+            FakeResponse(416),
+            FakeResponse(416),
+            FakeResponse(416),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        meta_end = 1000000000
+        meta_chunk = self.meta_chunk()
+        headers = {'Range': 'bytes=-%s' % (meta_end)}
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers)
+            self.assertEqual(None, reader.get_iter())
+
+            self.assertEqual(len(conn_record), self.storage_method.nb_copy)
+
+    def test_read_404_resume(self):
+        test_data = ('1234' * 1024)[:-10]
+        data_checksum = self.checksum(test_data).hexdigest()
+        meta_chunk = self.meta_chunk()
+
+        responses = [
+            FakeResponse(404, ''),
+            FakeResponse(200, test_data),
+            FakeResponse(200, test_data),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers)
+            it = reader.get_iter()
+            for part in it:
+                parts.append(part)
+                for d in part['iter']:
+                    data += d
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(len(test_data), len(data))
+        self.assertEqual(data_checksum, self.checksum(data).hexdigest())
+        self.assertEqual(len(conn_record), 2)
+
+        # TODO test log output
+        # TODO verify ranges
+
+    def test_read_timeout(self):
+        test_data = ('1234' * 1024*1024)[:-10]
+        data_checksum = self.checksum(test_data).hexdigest()
+        meta_chunk = self.meta_chunk()
+
+        headers = {}
+        responses = [
+            FakeResponse(200, test_data, headers, slow=0.1),
+            FakeResponse(200, test_data, headers, slow=0.1),
+            FakeResponse(200, test_data, headers, slow=0.1),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers,
+                                    read_timeout=0.05)
+            it = reader.get_iter()
+            try:
+                for part in it:
+                    parts.append(part)
+                    for d in part['iter']:
+                        data += d
+            except exc.ChunkReadTimeout:
+                pass
+
+        self.assertEqual(len(parts), 1)
+        self.assertNotEqual(data_checksum, self.checksum(data).hexdigest())
+        self.assertEqual(len(conn_record), 3)
+
+        # TODO test log output
+        # TODO verify ranges
+
+    def test_read_timeout_resume(self):
+        test_data = ('1234' * 1024*1024)[:-10]
+        data_checksum = self.checksum(test_data).hexdigest()
+        meta_chunk = self.meta_chunk()
+
+        headers = {}
+        responses = [
+            FakeResponse(200, test_data, headers, slow=0.05),
+            FakeResponse(200, test_data, headers),
+            FakeResponse(200, test_data, headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            reader = io.ChunkReader(iter(meta_chunk), None, headers,
+                                    read_timeout=0.01)
+            it = reader.get_iter()
+            for part in it:
+                parts.append(part)
+                for d in part['iter']:
+                    data += d
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(data_checksum, self.checksum(data).hexdigest())
+        self.assertEqual(len(conn_record), 2)
+
+        # TODO test log output
+        # TODO verify ranges

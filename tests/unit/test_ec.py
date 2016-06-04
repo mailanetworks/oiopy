@@ -369,6 +369,49 @@ class TestEC(unittest.TestCase):
 
         return test_data, ec_chunks
 
+    def test_read_zero_byte(self):
+        empty = ''
+
+        headers = {
+            'Content-Length': 0,
+        }
+
+        responses = [
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+            FakeResponse(200, '', headers),
+        ]
+
+        def get_response(req):
+            return responses.pop(0) if responses else FakeResponse(404)
+
+        headers = {}
+        meta_start = 1
+        meta_end = 4
+
+        meta_chunk = self.meta_chunk()
+        meta_chunk[0]['size'] = len(empty)
+        data = ''
+        parts = []
+        with set_http_requests(get_response) as conn_record:
+            handler = ECChunkDownloadHandler(
+                self.storage_method, meta_chunk, meta_start, meta_end, headers)
+            stream = handler.get_stream()
+            for part in stream:
+                parts.append(part)
+                for x in part['iter']:
+                    data += x
+
+        self.assertEqual(len(parts), 0)
+        self.assertEqual(data, empty)
+        self.assertEqual(len(conn_record), self.storage_method.ec_nb_data)
+
     def test_read_range(self):
         fragment_size = self.storage_method.ec_fragment_size
 
@@ -445,11 +488,6 @@ class TestEC(unittest.TestCase):
         meta_chunk = self.meta_chunk()
         meta_chunk[0]['size'] = 1024
 
-        def consume_stream(stream):
-            for part in stream:
-                for x in part['iter']:
-                    pass
-
         nb = self.storage_method.ec_nb_data + self.storage_method.ec_nb_parity
         with set_http_requests(get_response) as conn_record:
             handler = ECChunkDownloadHandler(self.storage_method, meta_chunk,
@@ -467,12 +505,12 @@ class TestEC(unittest.TestCase):
 
         headers = {}
         responses = [
-            FakeResponse(404, ec_chunks[0], headers),
+            FakeResponse(404, '', headers),
             FakeResponse(200, ec_chunks[1], headers),
-            FakeResponse(404, ec_chunks[2], headers),
+            FakeResponse(404, '', headers),
             FakeResponse(200, ec_chunks[3], headers),
             FakeResponse(200, ec_chunks[4], headers),
-            FakeResponse(404, ec_chunks[5], headers),
+            FakeResponse(404, '', headers),
             FakeResponse(200, ec_chunks[6], headers),
             FakeResponse(200, ec_chunks[7], headers),
             FakeResponse(200, ec_chunks[8], headers),

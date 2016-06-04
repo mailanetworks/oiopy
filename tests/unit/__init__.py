@@ -47,7 +47,7 @@ def decode_chunked_body(raw_body):
             # get the hexa_length
             hexa_length, remaining = remaining.split('\r\n', 1)
             length = int(hexa_length, 16)
-            if not length:
+            if length == 0:
                 # reached the end
                 reading_trailers = True
             else:
