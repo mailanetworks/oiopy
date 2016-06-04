@@ -16,7 +16,7 @@ from tests.unit import empty_stream, decode_chunked_body, \
 
 class TestEC(unittest.TestCase):
     def setUp(self):
-        self.chunk_method = 'ec/algo=isa_l_rs_vand,k=6,m=3'
+        self.chunk_method = 'ec/algo=liberasurecode_rs_vand,k=6,m=3'
         storage_method = STORAGE_METHODS.load(self.chunk_method)
         self.storage_method = storage_method
         self.cid = \
