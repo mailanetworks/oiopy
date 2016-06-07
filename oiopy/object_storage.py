@@ -465,7 +465,6 @@ class ObjectStorageAPI(API):
         storage_method = STORAGE_METHODS.load(sysmeta['chunk_method'])
 
         chunks = _sort_chunks(raw_chunks, storage_method.ec)
-        sysmeta['content_chunksnb'] = len(chunks)
         sysmeta['content_path'] = obj_name
         sysmeta['container_id'] = utils.name2cid(account, container)
 

@@ -40,13 +40,14 @@ _ext_pattern = re.compile(
 
 def parse_content_type(raw_content_type):
     param_list = []
-    if ';' in raw_content_type:
-        content_type, params = raw_content_type.split(';', 1)
-        params = ';' + params
-        for p in _ext_pattern.findall(params):
-            k = p[0].strip()
-            v = p[1].strip()
-            param_list.append((k, v))
+    if raw_content_type:
+        if ';' in raw_content_type:
+            content_type, params = raw_content_type.split(';', 1)
+            params = ';' + params
+            for p in _ext_pattern.findall(params):
+                k = p[0].strip()
+                v = p[1].strip()
+                param_list.append((k, v))
     return raw_content_type, param_list
 
 

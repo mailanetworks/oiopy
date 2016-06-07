@@ -88,8 +88,7 @@ class ReplicatedChunkWriteHandler(object):
                 current_conns.append(conn)
 
         quorum = False
-        if current_conns:
-            quorum = self._check_quorum(current_conns)
+        quorum = self._check_quorum(current_conns)
         if not quorum:
             raise exc.OioException("RAWX write failure")
 
