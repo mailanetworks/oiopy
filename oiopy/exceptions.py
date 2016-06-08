@@ -23,6 +23,22 @@ class OioException(Exception):
     pass
 
 
+class ECError(Exception):
+    pass
+
+
+class UnsatisfiableRange(Exception):
+    pass
+
+
+class EmptyByteRange(Exception):
+    pass
+
+
+class InvalidStorageMethod(OioException):
+    pass
+
+
 class PreconditionFailed(OioException):
     pass
 
@@ -89,6 +105,10 @@ class ConnectionTimeout(Timeout):
 
 
 class SourceReadError(OioException):
+    pass
+
+
+class SourceReadTimeout(Timeout):
     pass
 
 
